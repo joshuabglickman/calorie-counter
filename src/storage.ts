@@ -113,13 +113,63 @@ export type Data = {
   /** Body weight by day (YYYY-MM-DD), in weightUnit. */
   weights: Record<string, number>;
   weightUnit: WeightUnit;
+  /** Blood sugar readings by day (YYYY-MM-DD), values always stored in mg/dL. */
+  glucose: Record<string, GlucoseReading[]>;
+  glucoseUnit: GlucoseUnit;
+  /** What to show; anything missing counts as shown. */
+  display: Display;
 };
 
 export type WeightUnit = 'lb' | 'kg';
 
+export type GlucoseUnit = 'mg/dL' | 'mmol/L';
+export type GlucoseTag = 'fasting' | 'before' | 'after' | 'bedtime';
+export const GLUCOSE_TAGS: { key: GlucoseTag; label: string }[] = [
+  { key: 'fasting', label: 'Fasting' },
+  { key: 'before', label: 'Before meal' },
+  { key: 'after', label: 'After meal' },
+  { key: 'bedtime', label: 'Bedtime' },
+];
+
+export type GlucoseReading = {
+  id: string;
+  /** Time of the reading (ms since epoch). */
+  time: number;
+  /** mg/dL */
+  value: number;
+  tag?: GlucoseTag;
+};
+
+const MMOL = 18.016;
+
+/** A stored mg/dL value in the chosen unit: 95 or 5.3. */
+export function glucoseIn(mgdl: number, unit: GlucoseUnit): number {
+  return unit === 'mg/dL' ? Math.round(mgdl) : Math.round((mgdl / MMOL) * 10) / 10;
+}
+
+/** A typed value in the chosen unit, back to mg/dL for storing. */
+export function glucoseToMgdl(value: number, unit: GlucoseUnit): number {
+  return unit === 'mg/dL' ? value : value * MMOL;
+}
+
+/** Food list columns, and items in the summary at the top. */
+export type Column = 'kcal' | 'carbs' | 'protein' | 'sodium';
+export type SummaryItem = Column | 'weight' | 'glucose';
+export type Display = { columns: Partial<Record<Column, boolean>>; summary: Partial<Record<SummaryItem, boolean>> };
+
 const KEY = 'caloriecounter:data:v1';
 
-export const DEFAULT_DATA: Data = { entries: [], foods: {}, goal: 2000, carbGoal: 20, weights: {}, weightUnit: 'lb' };
+export const DEFAULT_DATA: Data = {
+  entries: [],
+  foods: {},
+  goal: 2000,
+  carbGoal: 20,
+  weights: {},
+  weightUnit: 'lb',
+  glucose: {},
+  glucoseUnit: 'mg/dL',
+  display: { columns: {}, summary: {} },
+};
 
 export async function loadData(): Promise<Data> {
   try {
@@ -144,6 +194,9 @@ export function parseData(parsed: Partial<Data>): Data {
     netCarbs: parsed.netCarbs === true,
     weights: parsed.weights ?? {},
     weightUnit: parsed.weightUnit === 'kg' ? 'kg' : 'lb',
+    glucose: parsed.glucose ?? {},
+    glucoseUnit: parsed.glucoseUnit === 'mmol/L' ? 'mmol/L' : 'mg/dL',
+    display: { columns: parsed.display?.columns ?? {}, summary: parsed.display?.summary ?? {} },
   };
 }
 

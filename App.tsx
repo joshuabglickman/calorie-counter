@@ -22,11 +22,18 @@ import { addDays, formatDay, todayKey } from './src/dates';
 import { EntryDraft, EntryForm } from './src/EntryForm';
 import { normalize } from './src/foodDb';
 import { findExact, mineOptions } from './src/foodSearch';
+import { glucoseAverage, GlucoseModal } from './src/Glucose';
+import { SettingsModal, shown } from './src/Settings';
 import {
   calcCalories,
   calcCarbs,
   calcGrams,
+  Column,
   fmtCarbs,
+  glucoseIn,
+  GlucoseReading,
+  GlucoseUnit,
+  SummaryItem,
   convertWeights,
   Data,
   DEFAULT_DATA,
@@ -56,6 +63,18 @@ type Tab = 'day' | 'history';
 
 const COLLAPSED_KEY = 'caloriecounter:collapsedMeals';
 
+type Nums = { kcal: number; carbs?: number; protein?: number; sodium?: number };
+type ColStyle = 'colKcal' | 'colCarbs' | 'colNa';
+
+/** Food list columns, in order. Which ones show is set in Settings. */
+const COLS: { key: Column; header: string; width: ColStyle; fmt: (n: Nums) => string }[] = [
+  { key: 'kcal', header: 'kcal', width: 'colKcal', fmt: (n) => n.kcal.toLocaleString() },
+  { key: 'carbs', header: 'carbs', width: 'colCarbs', fmt: (n) => (n.carbs === undefined ? '–' : `${fmtCarbs(n.carbs)}g`) },
+  { key: 'protein', header: 'protein', width: 'colCarbs', fmt: (n) => (n.protein === undefined ? '–' : `${n.protein}g`) },
+  { key: 'sodium', header: 'sodium', width: 'colNa', fmt: (n) => (n.sodium === undefined ? '–' : n.sodium.toLocaleString()) },
+];
+type Col = (typeof COLS)[number];
+
 function Main() {
   const t = useTheme();
   const s = useMemo(() => styles(t), [t]);
@@ -70,6 +89,9 @@ function Main() {
   const [addMeal, setAddMeal] = useState<Meal>('breakfast');
   const [weightOpen, setWeightOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState<null | GoalKey>(null);
+  const [glucoseOpen, setGlucoseOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const cols = COLS.filter((c) => shown(data.display.columns, c.key));
 
   useEffect(() => {
     loadData().then((d) => {
@@ -145,7 +167,7 @@ function Main() {
           data: isCollapsed ? [] : items,
           count: items.length,
           isCollapsed,
-          total: items.reduce((sum, e) => sum + e.kcal, 0),
+          kcal: items.reduce((sum, e) => sum + e.kcal, 0),
           carbs: items.reduce((sum, e) => sum + (e.carbs ?? 0), 0),
           protein: items.reduce((sum, e) => sum + (e.protein ?? 0), 0),
           sodium: items.reduce((sum, e) => sum + (e.sodium ?? 0), 0),
@@ -249,6 +271,9 @@ function Main() {
         ) : (
           <Text style={[s.dateText, { flex: 1, textAlign: 'left', marginLeft: 4 }]}>History</Text>
         )}
+        <Pressable onPress={() => setSettingsOpen(true)} hitSlop={8} style={s.gear} accessibilityLabel="Settings">
+          <Text style={s.gearText}>⚙</Text>
+        </Pressable>
         <View style={s.tabs}>
           {(['day', 'history'] as Tab[]).map((k) => (
             <Pressable key={k} onPress={() => setTab(k)} style={[s.tab, tab === k && s.tabActive]}>
@@ -271,16 +296,22 @@ function Main() {
             proteinGoal={data.proteinGoal}
             weight={data.weights[day]}
             weightGoal={data.weightGoal}
-            onEdit={(what) => (what === 'weight' ? setWeightOpen(true) : setGoalOpen(what))}
+            glucose={data.glucose[day]}
+            glucoseUnit={data.glucoseUnit}
+            show={data.display.summary}
+            onEdit={(what) =>
+              what === 'weight' ? setWeightOpen(true) : what === 'glucose' ? setGlucoseOpen(true) : setGoalOpen(what)
+            }
           />
 
           {/* Column headers stay put while the list scrolls. */}
-          {dayEntries.length > 0 && (
+          {dayEntries.length > 0 && cols.length > 0 && (
             <View style={s.colHeader}>
-              <Text style={[s.colHeaderText, s.colKcal]}>kcal</Text>
-              <Text style={[s.colHeaderText, s.colCarbs]}>carbs</Text>
-              <Text style={[s.colHeaderText, s.colCarbs]}>protein</Text>
-              <Text style={[s.colHeaderText, s.colNa]}>sodium</Text>
+              {cols.map((c) => (
+                <Text key={c.key} style={[s.colHeaderText, s[c.width]]}>
+                  {c.header}
+                </Text>
+              ))}
             </View>
           )}
           <SectionList
@@ -312,10 +343,11 @@ function Main() {
                 >
                   <Text style={s.mealAddText}>＋</Text>
                 </Pressable>
-                <Text style={[s.mealTotal, s.colKcal]}>{section.count ? section.total.toLocaleString() : ''}</Text>
-                <Text style={[s.mealTotal, s.colCarbs]}>{section.count ? `${fmtCarbs(section.carbs)}g` : ''}</Text>
-                <Text style={[s.mealTotal, s.colCarbs]}>{section.count ? `${section.protein}g` : ''}</Text>
-                <Text style={[s.mealTotal, s.colNa]}>{section.count ? section.sodium.toLocaleString() : ''}</Text>
+                {cols.map((c) => (
+                  <Text key={c.key} style={[s.mealTotal, s[c.width]]}>
+                    {section.count ? c.fmt(section) : ''}
+                  </Text>
+                ))}
               </View>
             )}
             renderItem={({ item, index, section }) => (
@@ -332,12 +364,11 @@ function Main() {
                   {item.name}
                   <Text style={s.entryMeta}> {formatAmount(item.amount, item.unit)}</Text>
                 </Text>
-                <Text style={[s.entryKcal, s.colKcal]}>{item.kcal}</Text>
-                <Text style={[s.entryCarbs, s.colCarbs]}>{item.carbs === undefined ? '–' : `${fmtCarbs(item.carbs)}g`}</Text>
-                <Text style={[s.entryCarbs, s.colCarbs]}>{item.protein === undefined ? '–' : `${item.protein}g`}</Text>
-                <Text style={[s.entryCarbs, s.colNa]}>
-                  {item.sodium === undefined ? '–' : item.sodium.toLocaleString()}
-                </Text>
+                {cols.map((c) => (
+                  <Text key={c.key} style={[c.key === 'kcal' ? s.entryKcal : s.entryCarbs, s[c.width]]}>
+                    {c.fmt(item)}
+                  </Text>
+                ))}
               </Pressable>
             )}
             ListFooterComponent={
@@ -357,6 +388,7 @@ function Main() {
       ) : (
         <History
           data={data}
+          cols={cols}
           onRestore={(restored) => setData(restored)}
           onPickDay={(k) => {
             setDay(k);
@@ -397,6 +429,32 @@ function Main() {
         }}
       />
 
+      <GlucoseModal
+        visible={glucoseOpen}
+        dayKey={day}
+        dayLabel={formatDay(day)}
+        readings={data.glucose[day] ?? []}
+        unit={data.glucoseUnit}
+        onClose={() => setGlucoseOpen(false)}
+        onChange={(readings, unit) =>
+          setData((prev) => {
+            const glucose = { ...prev.glucose };
+            if (readings.length) glucose[day] = readings;
+            else delete glucose[day];
+            return { ...prev, glucose, glucoseUnit: unit };
+          })
+        }
+      />
+
+      <SettingsModal
+        visible={settingsOpen}
+        display={data.display}
+        glucoseUnit={data.glucoseUnit}
+        onClose={() => setSettingsOpen(false)}
+        onChange={(display) => setData((prev) => ({ ...prev, display }))}
+        onGlucoseUnit={(glucoseUnit) => setData((prev) => ({ ...prev, glucoseUnit }))}
+      />
+
       <GoalModal
         visible={goalOpen !== null}
         title={goalOpen ? GOALS[goalOpen].title : ''}
@@ -412,7 +470,7 @@ function Main() {
 }
 
 type GoalKey = 'kcal' | 'carbs' | 'protein' | 'sodium';
-type Editable = GoalKey | 'weight';
+type Editable = GoalKey | 'weight' | 'glucose';
 
 const GOALS: Record<GoalKey, { title: string; field: 'goal' | 'carbGoal' | 'proteinGoal' | 'sodiumGoal' }> = {
   kcal: { title: 'Daily calorie goal', field: 'goal' },
@@ -420,6 +478,8 @@ const GOALS: Record<GoalKey, { title: string; field: 'goal' | 'carbGoal' | 'prot
   protein: { title: 'Daily protein target (g)', field: 'proteinGoal' },
   sodium: { title: 'Daily sodium limit (mg)', field: 'sodiumGoal' },
 };
+
+const SUMMARY_KEYS: SummaryItem[] = ['kcal', 'carbs', 'protein', 'sodium', 'weight', 'glucose'];
 
 /** Compact summary grid ("Calories: 1,501/1,500", "Sodium: 1,240/2,300"...). Tap an item to edit it. */
 function TotalCard({
@@ -433,6 +493,9 @@ function TotalCard({
   sodiumGoal,
   weight,
   weightGoal,
+  glucose,
+  glucoseUnit,
+  show,
   onEdit,
 }: {
   total: number;
@@ -445,26 +508,34 @@ function TotalCard({
   sodiumGoal: number | undefined;
   weight: number | undefined;
   weightGoal: number | undefined;
+  glucose: GlucoseReading[] | undefined;
+  glucoseUnit: GlucoseUnit;
+  show: Partial<Record<SummaryItem, boolean>>;
   onEdit: (what: Editable) => void;
 }) {
   const t = useTheme();
   const s = useMemo(() => styles(t), [t]);
   const fmt = (n: number | undefined) => (n === undefined ? '?' : n.toLocaleString());
+  // Most recent reading of the day.
+  const latest = glucose?.length ? glucose.reduce((a, b) => (b.time > a.time ? b : a)) : undefined;
+  if (!SUMMARY_KEYS.some((k) => shown(show, k))) return null;
 
-  const cell = (what: Editable, label: string, value: string, target: string, color?: string) => (
-    <Pressable
-      key={what}
-      onPress={() => onEdit(what)}
-      hitSlop={4}
-      style={({ pressed }) => [s.statCell, pressed && { opacity: 0.6 }]}
-    >
-      <Text style={s.statText} numberOfLines={1}>
-        <Text style={s.statLabel}>{label}: </Text>
-        <Text style={[s.statValue, color ? { color } : null]}>{value}</Text>
-        <Text style={s.statGoal}>/{target}</Text>
-      </Text>
-    </Pressable>
-  );
+  // Items turned off in Settings render nothing.
+  const cell = (what: Editable, label: string, value: string, target?: string, color?: string) =>
+    shown(show, what) && (
+      <Pressable
+        key={what}
+        onPress={() => onEdit(what)}
+        hitSlop={4}
+        style={({ pressed }) => [s.statCell, pressed && { opacity: 0.6 }]}
+      >
+        <Text style={s.statText} numberOfLines={1}>
+          <Text style={s.statLabel}>{label}: </Text>
+          <Text style={[s.statValue, color ? { color } : null]}>{value}</Text>
+          {target !== undefined && <Text style={s.statGoal}>/{target}</Text>}
+        </Text>
+      </Pressable>
+    );
 
   return (
     <View style={[s.card, s.statGrid]}>
@@ -485,16 +556,19 @@ function TotalCard({
         sodiumGoal !== undefined && sodium > sodiumGoal ? t.over : undefined,
       )}
       {cell('weight', 'Weight', weight === undefined ? '—' : String(weight), fmt(weightGoal))}
+      {cell('glucose', 'Blood sugar', latest ? String(glucoseIn(latest.value, glucoseUnit)) : '—')}
     </View>
   );
 }
 
 function History({
   data,
+  cols,
   onPickDay,
   onRestore,
 }: {
   data: Data;
+  cols: Col[];
   onPickDay: (key: string) => void;
   onRestore: (data: Data) => void;
 }) {
@@ -504,7 +578,8 @@ function History({
 
   const rows = useMemo(() => {
     const totals = new Map<string, { kcal: number; carbs: number; protein: number; sodium: number; count: number }>();
-    for (const d of Object.keys(data.weights)) totals.set(d, { kcal: 0, carbs: 0, protein: 0, sodium: 0, count: 0 });
+    for (const d of [...Object.keys(data.weights), ...Object.keys(data.glucose)])
+      totals.set(d, { kcal: 0, carbs: 0, protein: 0, sodium: 0, count: 0 });
     for (const e of data.entries) {
       const cur = totals.get(e.date) ?? { kcal: 0, carbs: 0, protein: 0, sodium: 0, count: 0 };
       cur.kcal += e.kcal;
@@ -515,9 +590,17 @@ function History({
       totals.set(e.date, cur);
     }
     return [...totals.entries()].map(([date, v]) => ({ date, ...v })).sort((a, b) => (a.date < b.date ? 1 : -1));
-  }, [data.entries, data.weights]);
+  }, [data.entries, data.weights, data.glucose]);
 
   const [busy, setBusy] = useState(false);
+
+  /** " · sugar 98" (the day's average when there are several readings). */
+  const glucoseLabel = (date: string) => {
+    const avg = glucoseAverage(data.glucose[date]);
+    if (avg === null) return '';
+    const n = data.glucose[date].length;
+    return ` · sugar ${glucoseIn(avg, data.glucoseUnit)}${n > 1 ? ' avg' : ''}`;
+  };
 
   const doExport = async () => {
     setBusy(true);
@@ -631,12 +714,21 @@ function History({
                 {'  '}
                 {item.count} item{item.count === 1 ? '' : 's'}
                 {data.weights[item.date] !== undefined && ` · ${data.weights[item.date]} ${data.weightUnit}`}
+                {glucoseLabel(item.date)}
               </Text>
             </Text>
-            <Text style={[s.entryKcal, s.colKcal, over && { color: t.over }]}>{item.kcal.toLocaleString()}</Text>
-            <Text style={[s.entryCarbs, s.colCarbs]}>{fmtCarbs(item.carbs)}g</Text>
-            <Text style={[s.entryCarbs, s.colCarbs]}>{item.protein}g</Text>
-            <Text style={[s.entryCarbs, s.colNa]}>{item.sodium.toLocaleString()}</Text>
+            {cols.map((c) => (
+              <Text
+                key={c.key}
+                style={[
+                  c.key === 'kcal' ? s.entryKcal : s.entryCarbs,
+                  s[c.width],
+                  c.key === 'kcal' && over && { color: t.over },
+                ]}
+              >
+                {c.fmt(item)}
+              </Text>
+            ))}
           </Pressable>
         );
       }}
@@ -808,6 +900,8 @@ const styles = (t: Theme) =>
       minHeight: 44,
     },
     tabs: { flexDirection: 'row', backgroundColor: t.chip, borderRadius: 9, padding: 2 },
+    gear: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+    gearText: { fontSize: 20, color: t.muted },
     tab: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 7 },
     tabActive: { backgroundColor: t.card },
     tabText: { color: t.muted, fontSize: 13, fontWeight: '600' },

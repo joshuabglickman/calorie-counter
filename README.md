@@ -24,9 +24,11 @@ Install **Expo Go** on your phone and scan the QR code shown in the terminal (ph
   online results are saved on the phone.
 - Change the amount or unit and the total updates. Tap "Adjust" to override a value; foods with typed calories are
   remembered.
-- Entries are grouped by meal (breakfast, lunch, dinner, snacks) with calorie, carb, protein and sodium subtotals. Sodium excludes salt added while cooking (USDA recipes list it as an ingredient).
+- Entries are grouped by meal (breakfast, lunch, dinner, snacks) with calorie, net carb, protein and sodium subtotals. Sodium excludes salt added while cooking (USDA recipes list it as an ingredient).
 - Daily calorie goal and carb limit (default 20 g), both editable; tap an entry to edit or delete it.
 - Daily weight log (lb or kg) with the change since the last weigh-in.
+- Blood sugar log: several readings a day with time and an optional tag (fasting, before/after meal, bedtime), in mg/dL or mmol/L.
+- Settings (gear icon): choose which columns show in the food list and which items show in the summary at the top.
 - Move to earlier days with the arrows; the History tab lists every day's totals plus a 7-day average.
 - Data is stored only on the device (AsyncStorage). History → Backup exports a JSON file through the share
   sheet (Google Drive, email, Files) and restores from one.
