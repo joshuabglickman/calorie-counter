@@ -49,7 +49,7 @@ to install (allow "install unknown apps" when asked). Installing a newer build o
 The installed app downloads JavaScript updates automatically (EAS Update, `preview` channel):
 
 ```bash
-npx eas-cli@latest update --channel preview --message "What changed"   # ship a JS-only change
+npx eas-cli@latest update --channel preview --environment preview --message "What changed"   # ship a JS-only change
 npx eas-cli@latest build -p android --profile preview                 # new APK (native changes)
 ```
 
