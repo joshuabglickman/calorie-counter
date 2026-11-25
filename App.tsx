@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppVersion } from './src/AppVersion';
 import { exportBackup, pickBackup, saveBackupToFolder } from './src/backup';
 import { addDays, formatDay, todayKey } from './src/dates';
 import { EntryDraft, EntryForm } from './src/EntryForm';
@@ -549,6 +550,7 @@ function History({
           <Pressable onPress={doRestore} style={({ pressed }) => [s.backupBtn, pressed && { opacity: 0.6 }]}>
             <Text style={s.backupBtnText}>Restore from file</Text>
           </Pressable>
+          <AppVersion />
         </View>
       }
       renderItem={({ item }) => {
