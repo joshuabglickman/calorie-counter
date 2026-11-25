@@ -24,6 +24,12 @@
     },
     "plugins": [
       "expo-sharing"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8cef1168-8e54-420a-8a71-2fc06a2a138f"
+      }
+    },
+    "owner": "r0ckteacher"
   }
 }
