@@ -58,22 +58,30 @@ export function GlucoseModal({
   dayLabel,
   readings,
   unit,
+  goal,
   onClose,
   onChange,
+  onGoal,
 }: {
   visible: boolean;
   dayKey: string;
   dayLabel: string;
   readings: GlucoseReading[];
   unit: GlucoseUnit;
+  /** mg/dL */
+  goal: number | undefined;
   onClose: () => void;
   onChange: (readings: GlucoseReading[], unit: GlucoseUnit) => void;
+  /** mg/dL, or undefined to clear the goal. */
+  onGoal: (goal: number | undefined) => void;
 }) {
   const t = useTheme();
   const s = useMemo(() => styles(t), [t]);
   const [value, setValue] = useState('');
   const [time, setTime] = useState('');
   const [tag, setTag] = useState<GlucoseTag | undefined>(undefined);
+  const [goalText, setGoalText] = useState('');
+  const goalIn = (mgdl: number | undefined, u: GlucoseUnit) => (mgdl === undefined ? '' : String(glucoseIn(mgdl, u)));
 
   // Reset the form each time the dialog opens. Today's time defaults to now; other
   // days start blank so the time gets typed in.
@@ -81,6 +89,7 @@ export function GlucoseModal({
     const now = new Date();
     setValue('');
     setTag(undefined);
+    setGoalText(goalIn(goal, unit));
     setTime(dayKey === todayKey() ? `${now.getHours()}:${pad(now.getMinutes())}` : '');
   };
 
@@ -88,6 +97,25 @@ export function GlucoseModal({
   const when = parseTime(time, dayKey);
   const valid = n > 0 && when !== null;
   const sorted = [...readings].sort((a, b) => a.time - b.time);
+
+  // The goal is saved when the dialog closes or the unit changes; returns the goal in mg/dL.
+  const commitGoal = () => {
+    const text = goalText.trim();
+    if (text === goalIn(goal, unit)) return goal;
+    const g = parseNumber(text);
+    const next = text === '' ? undefined : g > 0 ? glucoseToMgdl(g, unit) : goal;
+    if (next !== goal) onGoal(next);
+    return next;
+  };
+  const close = () => {
+    commitGoal();
+    onClose();
+  };
+  const switchUnit = (k: GlucoseUnit) => {
+    if (k === unit) return;
+    setGoalText(goalIn(commitGoal(), k));
+    onChange(readings, k);
+  };
 
   const add = () => {
     if (!valid) return;
@@ -97,15 +125,15 @@ export function GlucoseModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} onShow={reset}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={close} onShow={reset}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.backdrop}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={close} />
         <View style={s.dialog}>
           <View style={s.titleRow}>
             <Text style={s.title}>Blood sugar · {dayLabel}</Text>
             <View style={s.tabs}>
               {(['mg/dL', 'mmol/L'] as GlucoseUnit[]).map((k) => (
-                <Pressable key={k} onPress={() => onChange(readings, k)} style={[s.tab, unit === k && s.tabActive]}>
+                <Pressable key={k} onPress={() => switchUnit(k)} style={[s.tab, unit === k && s.tabActive]}>
                   <Text style={[s.tabText, unit === k && s.tabTextActive]}>{k}</Text>
                 </Pressable>
               ))}
@@ -117,7 +145,9 @@ export function GlucoseModal({
               {sorted.map((r) => (
                 <View key={r.id} style={s.reading}>
                   <Text style={s.readingTime}>{formatTime(r.time)}</Text>
-                  <Text style={s.readingValue}>{glucoseIn(r.value, unit)}</Text>
+                  <Text style={[s.readingValue, goal !== undefined && r.value > goal && { color: t.over }]}>
+                    {glucoseIn(r.value, unit)}
+                  </Text>
                   <Text style={s.readingTag} numberOfLines={1}>
                     {GLUCOSE_TAGS.find((g) => g.key === r.tag)?.label ?? ''}
                   </Text>
@@ -169,8 +199,22 @@ export function GlucoseModal({
             ))}
           </View>
 
+          <View style={s.goalRow}>
+            <Text style={s.goalLabel}>Goal (at or below)</Text>
+            <TextInput
+              style={[s.input, s.goalInput]}
+              value={goalText}
+              onChangeText={setGoalText}
+              keyboardType="decimal-pad"
+              placeholder="optional"
+              placeholderTextColor={t.muted}
+              selectTextOnFocus
+            />
+            <Text style={s.muted}>{unit}</Text>
+          </View>
+
           <View style={s.buttons}>
-            <Pressable onPress={onClose} hitSlop={8}>
+            <Pressable onPress={close} hitSlop={8}>
               <Text style={[s.btn, { color: t.muted }]}>Done</Text>
             </Pressable>
             <Pressable onPress={add} disabled={!valid} hitSlop={8}>
@@ -222,6 +266,9 @@ const styles = (t: Theme) =>
     chipActive: { backgroundColor: t.accent },
     chipText: { fontSize: 13, color: t.text, fontWeight: '600' },
     chipTextActive: { color: t.accentText },
+    goalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 },
+    goalLabel: { flex: 1, fontSize: 14, color: t.text },
+    goalInput: { width: 90, paddingVertical: 6, fontSize: 16 },
     buttons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 28, marginTop: 18 },
     btn: { fontSize: 16, fontWeight: '700' },
   });

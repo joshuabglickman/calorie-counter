@@ -298,6 +298,7 @@ function Main() {
             weightGoal={data.weightGoal}
             glucose={data.glucose[day]}
             glucoseUnit={data.glucoseUnit}
+            glucoseGoal={data.glucoseGoal}
             show={data.display.summary}
             onEdit={(what) =>
               what === 'weight' ? setWeightOpen(true) : what === 'glucose' ? setGlucoseOpen(true) : setGoalOpen(what)
@@ -435,6 +436,8 @@ function Main() {
         dayLabel={formatDay(day)}
         readings={data.glucose[day] ?? []}
         unit={data.glucoseUnit}
+        goal={data.glucoseGoal}
+        onGoal={(glucoseGoal) => setData((prev) => ({ ...prev, glucoseGoal }))}
         onClose={() => setGlucoseOpen(false)}
         onChange={(readings, unit) =>
           setData((prev) => {
@@ -495,6 +498,7 @@ function TotalCard({
   weightGoal,
   glucose,
   glucoseUnit,
+  glucoseGoal,
   show,
   onEdit,
 }: {
@@ -510,6 +514,7 @@ function TotalCard({
   weightGoal: number | undefined;
   glucose: GlucoseReading[] | undefined;
   glucoseUnit: GlucoseUnit;
+  glucoseGoal: number | undefined;
   show: Partial<Record<SummaryItem, boolean>>;
   onEdit: (what: Editable) => void;
 }) {
@@ -556,7 +561,13 @@ function TotalCard({
         sodiumGoal !== undefined && sodium > sodiumGoal ? t.over : undefined,
       )}
       {cell('weight', 'Weight', weight === undefined ? '—' : String(weight), fmt(weightGoal))}
-      {cell('glucose', 'Blood sugar', latest ? String(glucoseIn(latest.value, glucoseUnit)) : '—')}
+      {cell(
+        'glucose',
+        'Blood sugar',
+        latest ? String(glucoseIn(latest.value, glucoseUnit)) : '—',
+        glucoseGoal === undefined ? '?' : String(glucoseIn(glucoseGoal, glucoseUnit)),
+        latest && glucoseGoal !== undefined && latest.value > glucoseGoal ? t.over : undefined,
+      )}
     </View>
   );
 }

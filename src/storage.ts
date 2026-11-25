@@ -116,6 +116,8 @@ export type Data = {
   /** Blood sugar readings by day (YYYY-MM-DD), values always stored in mg/dL. */
   glucose: Record<string, GlucoseReading[]>;
   glucoseUnit: GlucoseUnit;
+  /** Blood sugar goal (stay at or below), in mg/dL; undefined until set. */
+  glucoseGoal?: number;
   /** What to show; anything missing counts as shown. */
   display: Display;
 };
@@ -196,6 +198,7 @@ export function parseData(parsed: Partial<Data>): Data {
     weightUnit: parsed.weightUnit === 'kg' ? 'kg' : 'lb',
     glucose: parsed.glucose ?? {},
     glucoseUnit: parsed.glucoseUnit === 'mmol/L' ? 'mmol/L' : 'mg/dL',
+    glucoseGoal: typeof parsed.glucoseGoal === 'number' && parsed.glucoseGoal > 0 ? parsed.glucoseGoal : undefined,
     display: { columns: parsed.display?.columns ?? {}, summary: parsed.display?.summary ?? {} },
   };
 }
