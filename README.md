@@ -24,7 +24,7 @@ Install **Expo Go** on your phone and scan the QR code shown in the terminal (ph
   online results are saved on the phone.
 - Change the amount or unit and the total updates. Tap "Adjust" to override a value; foods with typed calories are
   remembered.
-- Entries are grouped by meal (breakfast, lunch, dinner, snacks) with calorie and carb subtotals.
+- Entries are grouped by meal (breakfast, lunch, dinner, snacks) with calorie, carb, protein and sodium subtotals. Sodium excludes salt added while cooking (USDA recipes list it as an ingredient).
 - Daily calorie goal and carb limit (default 20 g), both editable; tap an entry to edit or delete it.
 - Daily weight log (lb or kg) with the change since the last weigh-in.
 - Move to earlier days with the arrows; the History tab lists every day's totals plus a 7-day average.

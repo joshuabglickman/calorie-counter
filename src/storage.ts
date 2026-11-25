@@ -23,7 +23,7 @@ export function calcCalories(amount: number, unit: Unit, kcalPer: number): numbe
   return Math.round((amount / unitBasis(unit)) * kcalPer);
 }
 
-/** Grams of a nutrient (carbs, protein) for an entry's calories, rounded to whole grams. */
+/** Grams of a nutrient (carbs, protein, sodium mg) for an entry's calories, rounded to whole grams. */
 export function calcGrams(kcal: number, perKcal: number | null | undefined): number | undefined {
   return perKcal == null ? undefined : Math.round(kcal * perKcal);
 }
@@ -64,6 +64,8 @@ export type Entry = {
   carbs?: number;
   /** Grams of protein; undefined if unknown. */
   protein?: number;
+  /** Milligrams of sodium; undefined if unknown. */
+  sodium?: number;
   createdAt: number;
 };
 
@@ -78,6 +80,7 @@ export type SavedFood = {
   countUnit?: string | null;
   carbsPerKcal?: number | null;
   proteinPerKcal?: number | null;
+  sodiumPerKcal?: number | null;
   lastUsed: number;
   uses: number;
 };

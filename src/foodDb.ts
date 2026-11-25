@@ -7,6 +7,7 @@
 /** [name, kcal per 100 g/ml, portion grams by unit, aliases, isLiquid] */
 import { CARBS_PER_100 } from './carbs';
 import { PROTEIN_PER_100 } from './protein';
+import { SODIUM_PER_100 } from './sodium';
 
 type Raw = [string, number, Record<string, number>, string[]?, boolean?];
 
@@ -266,8 +267,8 @@ const RAW: Raw[] = [
   ['Spirits', 231, { serving: 42 }, ['vodka', 'whiskey', 'whisky', 'rum', 'gin', 'tequila', 'shot', 'liquor'], true],
 ];
 
-/** [name, kcal per 100 g, carbs g/100 g, protein g/100 g, [[unit, grams], ...], aliases?] from scripts/build-usda-foods.mjs */
-type UsdaRaw = [string, number, number, number, [string, number][], string[]?];
+/** [name, kcal/100 g, carbs g/100 g, protein g/100 g, sodium mg/100 g, [[unit, grams], ...], aliases?] from scripts/build-usda-foods.mjs */
+type UsdaRaw = [string, number, number, number, number, [string, number][], string[]?];
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const USDA: UsdaRaw[] = require('./data/usda-foods.json');
 
@@ -284,6 +285,8 @@ export type DbFood = {
   carbsPerKcal: number | null;
   /** Grams of protein per kcal; null if unknown. */
   proteinPerKcal: number | null;
+  /** Milligrams of sodium per kcal; null if unknown. */
+  sodiumPerKcal: number | null;
   /** 0 = hand-picked list, 1 = USDA list. Lower ranks first in search. */
   tier: 0 | 1;
 };
@@ -320,6 +323,7 @@ function makeFood(
   per100: number,
   carbs100: number | undefined,
   protein100: number | undefined,
+  sodium100: number | undefined,
   portions: [string, number][],
   aliases: string[],
   liquid: boolean,
@@ -342,6 +346,7 @@ function makeFood(
     countUnit: labels.find((u) => !MEASURES.has(u)) ?? null,
     carbsPerKcal: perKcal(per100, carbs100),
     proteinPerKcal: perKcal(per100, protein100),
+    sodiumPerKcal: perKcal(per100, sodium100),
     terms: [name, ...aliases].map(normalize),
     tier,
   };
@@ -355,9 +360,19 @@ export function perKcal(kcal100: number, grams100: number | undefined): number |
 
 export const FOOD_DB: DbFood[] = [
   ...RAW.map(([name, per100, portions, aliases = [], liquid = false]) =>
-    makeFood(name, per100, CARBS_PER_100[name], PROTEIN_PER_100[name], Object.entries(portions), aliases, liquid, 0),
+    makeFood(
+      name,
+      per100,
+      CARBS_PER_100[name],
+      PROTEIN_PER_100[name],
+      SODIUM_PER_100[name],
+      Object.entries(portions),
+      aliases,
+      liquid,
+      0,
+    ),
   ),
-  ...USDA.map(([name, per100, carbs100, protein100, portions, aliases = []]) =>
-    makeFood(name, per100, carbs100, protein100, portions, aliases, false, 1),
+  ...USDA.map(([name, per100, carbs100, protein100, sodium100, portions, aliases = []]) =>
+    makeFood(name, per100, carbs100, protein100, sodium100, portions, aliases, false, 1),
   ),
 ];

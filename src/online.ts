@@ -39,7 +39,7 @@ function tidy(text: string): string {
   return lower[0].toUpperCase() + lower.slice(1);
 }
 
-/** Grams per 100 g of a nutrient by USDA number ('205' carbs, '203' protein). */
+/** Grams per 100 g of a nutrient by USDA number ('205' carbs, '203' protein, '307' sodium mg). */
 function gramsPer100(f: FdcFood, nutrientNumber: string): number | undefined {
   const n = (f.foodNutrients ?? []).find((x) => x.nutrientNumber === nutrientNumber && typeof x.value === 'number');
   return n?.value;
@@ -99,6 +99,7 @@ function toOption(f: FdcFood): FoodOption | null {
     countUnit: unitOrder.find((u) => !['cup', 'tbsp', 'tsp', 'fl oz', 'serving'].includes(u)) ?? null,
     carbsPerKcal: perKcal(per100, gramsPer100(f, '205')),
     proteinPerKcal: perKcal(per100, gramsPer100(f, '203')),
+    sodiumPerKcal: perKcal(per100, gramsPer100(f, '307')),
     terms: [normalize(name)],
     source: 'online',
   };

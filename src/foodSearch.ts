@@ -11,6 +11,8 @@ export type FoodOption = {
   carbsPerKcal: number | null;
   /** Grams of protein per kcal; null if unknown. */
   proteinPerKcal: number | null;
+  /** Milligrams of sodium per kcal; null if unknown. */
+  sodiumPerKcal: number | null;
   terms: string[];
   source: 'mine' | 'db' | 'usda' | 'online';
 };
@@ -35,6 +37,7 @@ function fromDb(f: DbFood): FoodOption {
     countUnit: f.countUnit,
     carbsPerKcal: f.carbsPerKcal,
     proteinPerKcal: f.proteinPerKcal,
+    sodiumPerKcal: f.sodiumPerKcal,
     terms: f.terms,
     source: f.tier === 0 ? 'db' : 'usda',
   };
@@ -162,6 +165,7 @@ export function mineOptions(saved: Record<string, SavedFood>): FoodOption[] {
         countUnit: f.countUnit ?? null,
         carbsPerKcal: f.carbsPerKcal ?? null,
         proteinPerKcal: f.proteinPerKcal ?? null,
+        sodiumPerKcal: f.sodiumPerKcal ?? null,
         terms: [normalize(f.name)],
         source: 'mine' as const,
       };

@@ -73,12 +73,13 @@ function Main() {
     loadData().then((d) => {
       const mine = mineOptions(d.foods);
       const entries = d.entries.map((e) => {
-        if (e.carbs !== undefined && e.protein !== undefined) return e;
+        if (e.carbs !== undefined && e.protein !== undefined && e.sodium !== undefined) return e;
         const f = findExact(e.name, mine);
         return {
           ...e,
           carbs: e.carbs ?? calcGrams(e.kcal, f?.carbsPerKcal),
           protein: e.protein ?? calcGrams(e.kcal, f?.proteinPerKcal),
+          sodium: e.sodium ?? calcGrams(e.kcal, f?.sodiumPerKcal),
         };
       });
       setData({ ...d, entries });
@@ -132,6 +133,7 @@ function Main() {
           total: items.reduce((sum, e) => sum + e.kcal, 0),
           carbs: items.reduce((sum, e) => sum + (e.carbs ?? 0), 0),
           protein: items.reduce((sum, e) => sum + (e.protein ?? 0), 0),
+          sodium: items.reduce((sum, e) => sum + (e.sodium ?? 0), 0),
         };
       }),
     [dayEntries, collapsed],
@@ -140,13 +142,17 @@ function Main() {
   const saveEntry = useCallback(
     (draft: EntryDraft) => {
       const kcal = calcCalories(draft.amount, draft.unit, draft.kcalPer);
-      const { remember, carbsPerKcal, proteinPerKcal, ...fields } = draft;
+      const { remember, carbsPerKcal, proteinPerKcal, sodiumPerKcal, ...fields } = draft;
       const carbs = calcGrams(kcal, carbsPerKcal);
       const protein = calcGrams(kcal, proteinPerKcal);
+      const sodium = calcGrams(kcal, sodiumPerKcal);
       setData((prev) => {
         const entries = editing
-          ? prev.entries.map((e) => (e.id === editing.id ? { ...e, ...fields, kcal, carbs, protein } : e))
-          : [...prev.entries, { ...fields, kcal, carbs, protein, id: newId(), date: day, createdAt: Date.now() }];
+          ? prev.entries.map((e) => (e.id === editing.id ? { ...e, ...fields, kcal, carbs, protein, sodium } : e))
+          : [
+              ...prev.entries,
+              { ...fields, kcal, carbs, protein, sodium, id: newId(), date: day, createdAt: Date.now() },
+            ];
         // Foods from the built-in lists are looked up again next time; only typed
         // calories and online picks are saved.
         if (!remember) return { ...prev, entries };
@@ -160,6 +166,7 @@ function Main() {
             countUnit: remember.countUnit,
             carbsPerKcal: remember.carbsPerKcal,
             proteinPerKcal: remember.proteinPerKcal,
+            sodiumPerKcal: remember.sodiumPerKcal,
             lastUsed: Date.now(),
             uses: (existing?.uses ?? 0) + (editing ? 0 : 1),
           },
@@ -256,6 +263,7 @@ function Main() {
               <Text style={[s.colHeaderText, s.colKcal]}>kcal</Text>
               <Text style={[s.colHeaderText, s.colCarbs]}>carbs</Text>
               <Text style={[s.colHeaderText, s.colCarbs]}>protein</Text>
+              <Text style={[s.colHeaderText, s.colNa]}>sodium</Text>
             </View>
           )}
           <SectionList
@@ -278,9 +286,6 @@ function Main() {
                       <Text style={s.mealCount}>{`  ${section.count} item${section.count === 1 ? '' : 's'}`}</Text>
                     )}
                   </Text>
-                  <Text style={[s.mealTotal, s.colKcal]}>{section.count ? section.total.toLocaleString() : ''}</Text>
-                  <Text style={[s.mealTotal, s.colCarbs]}>{section.count ? `${section.carbs}g` : ''}</Text>
-                  <Text style={[s.mealTotal, s.colCarbs]}>{section.count ? `${section.protein}g` : ''}</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => openAdd(section.key)}
@@ -290,6 +295,10 @@ function Main() {
                 >
                   <Text style={s.mealAddText}>＋</Text>
                 </Pressable>
+                <Text style={[s.mealTotal, s.colKcal]}>{section.count ? section.total.toLocaleString() : ''}</Text>
+                <Text style={[s.mealTotal, s.colCarbs]}>{section.count ? `${section.carbs}g` : ''}</Text>
+                <Text style={[s.mealTotal, s.colCarbs]}>{section.count ? `${section.protein}g` : ''}</Text>
+                <Text style={[s.mealTotal, s.colNa]}>{section.count ? section.sodium.toLocaleString() : ''}</Text>
               </View>
             )}
             renderItem={({ item, index, section }) => (
@@ -309,6 +318,9 @@ function Main() {
                 <Text style={[s.entryKcal, s.colKcal]}>{item.kcal}</Text>
                 <Text style={[s.entryCarbs, s.colCarbs]}>{item.carbs === undefined ? '–' : `${item.carbs}g`}</Text>
                 <Text style={[s.entryCarbs, s.colCarbs]}>{item.protein === undefined ? '–' : `${item.protein}g`}</Text>
+                <Text style={[s.entryCarbs, s.colNa]}>
+                  {item.sodium === undefined ? '–' : item.sodium.toLocaleString()}
+                </Text>
               </Pressable>
             )}
             ListFooterComponent={
@@ -467,13 +479,14 @@ function History({
   const insets = useSafeAreaInsets();
 
   const rows = useMemo(() => {
-    const totals = new Map<string, { kcal: number; carbs: number; protein: number; count: number }>();
-    for (const d of Object.keys(data.weights)) totals.set(d, { kcal: 0, carbs: 0, protein: 0, count: 0 });
+    const totals = new Map<string, { kcal: number; carbs: number; protein: number; sodium: number; count: number }>();
+    for (const d of Object.keys(data.weights)) totals.set(d, { kcal: 0, carbs: 0, protein: 0, sodium: 0, count: 0 });
     for (const e of data.entries) {
-      const cur = totals.get(e.date) ?? { kcal: 0, carbs: 0, protein: 0, count: 0 };
+      const cur = totals.get(e.date) ?? { kcal: 0, carbs: 0, protein: 0, sodium: 0, count: 0 };
       cur.kcal += e.kcal;
       cur.carbs += e.carbs ?? 0;
       cur.protein += e.protein ?? 0;
+      cur.sodium += e.sodium ?? 0;
       cur.count += 1;
       totals.set(e.date, cur);
     }
@@ -599,6 +612,7 @@ function History({
             <Text style={[s.entryKcal, s.colKcal, over && { color: t.over }]}>{item.kcal.toLocaleString()}</Text>
             <Text style={[s.entryCarbs, s.colCarbs]}>{item.carbs}g</Text>
             <Text style={[s.entryCarbs, s.colCarbs]}>{item.protein}g</Text>
+            <Text style={[s.entryCarbs, s.colNa]}>{item.sodium.toLocaleString()}</Text>
           </Pressable>
         );
       }}
@@ -825,13 +839,14 @@ const styles = (t: Theme) =>
       letterSpacing: 0.5,
     },
     mealTotal: { fontSize: 12, fontWeight: '700', color: t.muted, fontVariant: ['tabular-nums'] },
-    colKcal: { width: 40, textAlign: 'right' },
-    colCarbs: { width: 44, textAlign: 'right' },
+    colKcal: { width: 38, textAlign: 'right' },
+    colCarbs: { width: 40, textAlign: 'right' },
+    colNa: { width: 42, textAlign: 'right' },
     colHeader: {
       flexDirection: 'row',
       justifyContent: 'flex-end',
       gap: 8,
-      paddingRight: 12 + 40,
+      paddingRight: 12 + 10,
       paddingTop: 2,
       paddingBottom: 2,
       borderBottomWidth: StyleSheet.hairlineWidth,
@@ -854,7 +869,7 @@ const styles = (t: Theme) =>
       alignItems: 'center',
       backgroundColor: t.card,
       paddingLeft: 10,
-      paddingRight: 40,
+      paddingRight: 10,
       paddingVertical: 5,
       gap: 8,
       borderTopWidth: StyleSheet.hairlineWidth,

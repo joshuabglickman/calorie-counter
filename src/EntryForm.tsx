@@ -37,12 +37,14 @@ export type EntryDraft = Pick<Entry, 'name' | 'amount' | 'unit' | 'kcalPer'> & {
   /** Grams of carbs per kcal for this food; null if unknown. */
   carbsPerKcal: number | null;
   proteinPerKcal: number | null;
+  sodiumPerKcal: number | null;
   /** Set when the food should be saved to the user's foods (typed calories or online pick). */
   remember: null | {
     units: Record<string, number>;
     countUnit: string | null;
     carbsPerKcal: number | null;
     proteinPerKcal: number | null;
+    sodiumPerKcal: number | null;
   };
 };
 
@@ -224,24 +226,24 @@ export function EntryForm({ visible, editing, defaultMeal, foods, dayLabel, onSa
   const total = valid ? calcCalories(amountNum, effUnit, kcalPer) : null;
   const carbsPer = food?.carbsPerKcal ?? null;
   const proteinPer = food?.proteinPerKcal ?? null;
+  const sodiumPer = food?.sodiumPerKcal ?? null;
   const totalCarbs = total === null ? undefined : calcGrams(total, carbsPer);
   const totalProtein = total === null ? undefined : calcGrams(total, proteinPer);
+  const totalSodium = total === null ? undefined : calcGrams(total, sodiumPer);
 
   const submit = () => {
     if (!valid) return;
     let remember: EntryDraft['remember'] = null;
-    if (!useList)
-      remember = { units: { [effUnit]: kcalPer }, countUnit: null, carbsPerKcal: carbsPer, proteinPerKcal: proteinPer };
-    else if (food.source === 'online')
-      remember = { units: food.units, countUnit: food.countUnit, carbsPerKcal: carbsPer, proteinPerKcal: proteinPer };
+    const per = { carbsPerKcal: carbsPer, proteinPerKcal: proteinPer, sodiumPerKcal: sodiumPer };
+    if (!useList) remember = { units: { [effUnit]: kcalPer }, countUnit: null, ...per };
+    else if (food.source === 'online') remember = { units: food.units, countUnit: food.countUnit, ...per };
     onSave({
       meal,
       name: entryName,
       amount: amountNum,
       unit: effUnit,
       kcalPer,
-      carbsPerKcal: carbsPer,
-      proteinPerKcal: proteinPer,
+      ...per,
       remember,
     });
   };
@@ -397,6 +399,7 @@ export function EntryForm({ visible, editing, defaultMeal, foods, dayLabel, onSa
                 {total === null ? '—' : `${useList ? '≈ ' : ''}${total} kcal`}
                 {totalCarbs !== undefined && <Text style={s.totalCarbs}>{`  ${totalCarbs}g carbs`}</Text>}
                 {totalProtein !== undefined && <Text style={s.totalCarbs}>{`  ${totalProtein}g protein`}</Text>}
+                {totalSodium !== undefined && <Text style={s.totalCarbs}>{`  ${totalSodium}mg sodium`}</Text>}
               </Text>
             </View>
           </ScrollView>

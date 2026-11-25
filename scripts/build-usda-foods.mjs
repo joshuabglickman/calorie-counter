@@ -3,7 +3,7 @@
 //
 // Usage: node scripts/build-usda-foods.mjs <path-to-extracted-csv-folder>
 //
-// Output: [[name, kcalPer100g, carbsPer100g, proteinPer100g, [[unitLabel, grams], ...], [alias, ...]], ...]
+// Output: [[name, kcalPer100g, carbsPer100g, proteinPer100g, sodiumMgPer100g, [[unitLabel, grams], ...], [alias, ...]], ...]
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,11 +48,12 @@ async function eachRow(file, fn) {
 }
 
 const foods = new Map(); // fdc_id -> { name, kcal, portions: [], aliases: [] }
-await eachRow('food.csv', (r) => foods.set(r.fdc_id, { name: r.description, kcal: null, carbs: 0, protein: 0, portions: [], aliases: [] }));
+await eachRow('food.csv', (r) => foods.set(r.fdc_id, { name: r.description, kcal: null, carbs: 0, protein: 0, sodium: 0, portions: [], aliases: [] }));
 await eachRow('food_nutrient.csv', (r) => {
   if ((r.nutrient_id === '1008' || r.nutrient_id === '208') && foods.has(r.fdc_id)) foods.get(r.fdc_id).kcal = Number(r.amount);
   if ((r.nutrient_id === '1005' || r.nutrient_id === '205') && foods.has(r.fdc_id)) foods.get(r.fdc_id).carbs = Number(r.amount);
   if ((r.nutrient_id === '1003' || r.nutrient_id === '203') && foods.has(r.fdc_id)) foods.get(r.fdc_id).protein = Number(r.amount);
+  if ((r.nutrient_id === '1093' || r.nutrient_id === '307') && foods.has(r.fdc_id)) foods.get(r.fdc_id).sodium = Number(r.amount);
 });
 
 const SKIP_PORTION = /cubic inch|surface inch|yields|guideline|calorie package|^oz\b|^g\b|gram/i;
@@ -82,6 +83,39 @@ await eachRow('food_portion.csv', (r) => {
   if (f.portions.some((p) => p[0] === label)) return;
   f.portions.push([label, Math.round((grams / amount) * 10) / 10, Number(r.seq_num)]);
 });
+
+// Table salt added in the recipe ("Salt, table" ingredient). The user doesn't salt food, so its
+// sodium is removed below; salt already in ingredients like bread or cheese still counts.
+const SALT_NA_MG_PER_G = 387.6;
+// Recipes refer to other survey foods by their 8-digit FNDDS food code.
+const byFoodCode = new Map();
+await eachRow('survey_fndds_food.csv', (r) => byFoodCode.set(r.food_code, r.fdc_id));
+const recipes = new Map(); // fdc_id -> [{ grams, salt: boolean, sub: fdc_id of a nested survey food | '' }]
+await eachRow('input_food.csv', (r) => {
+  const grams = Number(r.gram_weight);
+  if (!(grams > 0)) return;
+  const list = recipes.get(r.fdc_id) ?? [];
+  list.push({ grams, salt: /^salt, table/i.test(r.sr_description ?? ''), sub: r.fdc_of_input_food || byFoodCode.get(r.sr_code) || '' });
+  recipes.set(r.fdc_id, list);
+});
+// Share of a food's weight that is table salt, following nested survey-food ingredients.
+const saltShareMemo = new Map();
+function saltShare(id, depth = 0) {
+  if (saltShareMemo.has(id)) return saltShareMemo.get(id);
+  const list = recipes.get(id);
+  let share = 0;
+  if (list && depth < 8) {
+    const total = list.reduce((sum, x) => sum + x.grams, 0);
+    const salt = list.reduce((sum, x) => sum + (x.salt ? x.grams : x.sub ? x.grams * saltShare(x.sub, depth + 1) : 0), 0);
+    share = total > 0 ? salt / total : 0;
+  }
+  saltShareMemo.set(id, share);
+  return share;
+}
+for (const [id, f] of foods) {
+  const share = saltShare(id);
+  if (share > 0) f.sodium = Math.max(0, f.sodium - share * 100 * SALT_NA_MG_PER_G);
+}
 
 await eachRow('food_attribute.csv', (r) => {
   const f = foods.get(r.fdc_id);
@@ -117,7 +151,7 @@ for (const f of foods.values()) {
   const portions = f.portions
     .sort((a, b) => (a[0] === 'serving') - (b[0] === 'serving') || a[2] - b[2])
     .map(([l, g]) => [l, g]);
-  const entry = [name, Math.round(f.kcal), Math.round(f.carbs * 10) / 10, Math.round(f.protein * 10) / 10, portions];
+  const entry = [name, Math.round(f.kcal), Math.round(f.carbs * 10) / 10, Math.round(f.protein * 10) / 10, Math.round(f.sodium), portions];
   const aliases = [...new Set(f.aliases)].filter((a) => aliasCount.get(a) <= 5);
   if (aliases.length) entry.push(aliases);
   out.push(entry);
