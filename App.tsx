@@ -22,7 +22,7 @@ import { normalize } from './src/foodDb';
 import { findExact, mineOptions } from './src/foodSearch';
 import {
   calcCalories,
-  calcCarbs,
+  calcGrams,
   convertWeights,
   Data,
   DEFAULT_DATA,
@@ -70,9 +70,13 @@ function Main() {
     loadData().then((d) => {
       const mine = mineOptions(d.foods);
       const entries = d.entries.map((e) => {
-        if (e.carbs !== undefined) return e;
-        const carbs = calcCarbs(e.kcal, findExact(e.name, mine)?.carbsPerKcal);
-        return carbs === undefined ? e : { ...e, carbs };
+        if (e.carbs !== undefined && e.protein !== undefined) return e;
+        const f = findExact(e.name, mine);
+        return {
+          ...e,
+          carbs: e.carbs ?? calcGrams(e.kcal, f?.carbsPerKcal),
+          protein: e.protein ?? calcGrams(e.kcal, f?.proteinPerKcal),
+        };
       });
       setData({ ...d, entries });
       setLoaded(true);
@@ -96,6 +100,7 @@ function Main() {
   );
   const dayTotal = dayEntries.reduce((sum, e) => sum + e.kcal, 0);
   const dayCarbs = dayEntries.reduce((sum, e) => sum + (e.carbs ?? 0), 0);
+  const dayProtein = dayEntries.reduce((sum, e) => sum + (e.protein ?? 0), 0);
   const sections = useMemo(
     () =>
       MEALS.map((m) => {
@@ -105,6 +110,7 @@ function Main() {
           data: items,
           total: items.reduce((sum, e) => sum + e.kcal, 0),
           carbs: items.reduce((sum, e) => sum + (e.carbs ?? 0), 0),
+          protein: items.reduce((sum, e) => sum + (e.protein ?? 0), 0),
         };
       }),
     [dayEntries],
@@ -113,12 +119,13 @@ function Main() {
   const saveEntry = useCallback(
     (draft: EntryDraft) => {
       const kcal = calcCalories(draft.amount, draft.unit, draft.kcalPer);
-      const { remember, carbsPerKcal, ...fields } = draft;
-      const carbs = calcCarbs(kcal, carbsPerKcal);
+      const { remember, carbsPerKcal, proteinPerKcal, ...fields } = draft;
+      const carbs = calcGrams(kcal, carbsPerKcal);
+      const protein = calcGrams(kcal, proteinPerKcal);
       setData((prev) => {
         const entries = editing
-          ? prev.entries.map((e) => (e.id === editing.id ? { ...e, ...fields, kcal, carbs } : e))
-          : [...prev.entries, { ...fields, kcal, carbs, id: newId(), date: day, createdAt: Date.now() }];
+          ? prev.entries.map((e) => (e.id === editing.id ? { ...e, ...fields, kcal, carbs, protein } : e))
+          : [...prev.entries, { ...fields, kcal, carbs, protein, id: newId(), date: day, createdAt: Date.now() }];
         // Foods from the built-in lists are looked up again next time; only typed
         // calories and online picks are saved.
         if (!remember) return { ...prev, entries };
@@ -131,6 +138,7 @@ function Main() {
             units: remember.units,
             countUnit: remember.countUnit,
             carbsPerKcal: remember.carbsPerKcal,
+            proteinPerKcal: remember.proteinPerKcal,
             lastUsed: Date.now(),
             uses: (existing?.uses ?? 0) + (editing ? 0 : 1),
           },
@@ -212,6 +220,7 @@ function Main() {
           <TotalCard
             total={dayTotal}
             carbs={dayCarbs}
+            protein={dayProtein}
             goal={data.goal}
             carbGoal={data.carbGoal}
             onEditGoal={() => setGoalOpen('kcal')}
@@ -237,6 +246,7 @@ function Main() {
                   {section.data.length ? section.total.toLocaleString() : ''}
                 </Text>
                 <Text style={[s.mealTotal, s.colCarbs]}>{section.data.length ? `${section.carbs}g` : ''}</Text>
+                <Text style={[s.mealTotal, s.colCarbs]}>{section.data.length ? `${section.protein}g` : ''}</Text>
                 <Pressable
                   onPress={() => openAdd(section.key)}
                   hitSlop={10}
@@ -263,6 +273,7 @@ function Main() {
                 </Text>
                 <Text style={[s.entryKcal, s.colKcal]}>{item.kcal}</Text>
                 <Text style={[s.entryCarbs, s.colCarbs]}>{item.carbs === undefined ? '–' : `${item.carbs}g`}</Text>
+                <Text style={[s.entryCarbs, s.colCarbs]}>{item.protein === undefined ? '–' : `${item.protein}g`}</Text>
               </Pressable>
             )}
             ListHeaderComponent={
@@ -270,6 +281,7 @@ function Main() {
                 <View style={s.colHeader}>
                   <Text style={[s.colHeaderText, s.colKcal]}>kcal</Text>
                   <Text style={[s.colHeaderText, s.colCarbs]}>carbs</Text>
+                  <Text style={[s.colHeaderText, s.colCarbs]}>protein</Text>
                 </View>
               ) : undefined
             }
@@ -346,6 +358,7 @@ function Main() {
 function TotalCard({
   total,
   carbs,
+  protein,
   goal,
   carbGoal,
   onEditGoal,
@@ -353,6 +366,7 @@ function TotalCard({
 }: {
   total: number;
   carbs: number;
+  protein: number;
   goal: number;
   carbGoal: number;
   onEditGoal: () => void;
@@ -371,6 +385,8 @@ function TotalCard({
         <View style={s.totalLine}>
           <Text style={s.bigNumber}>{total.toLocaleString()}</Text>
           <Text style={s.kcalUnit}>kcal</Text>
+          <Text style={[s.carbsTotal, { marginLeft: 10 }]}>{protein}</Text>
+          <Text style={s.kcalUnit}>g protein</Text>
         </View>
         <Pressable onPress={onEditGoal} hitSlop={8} style={{ alignItems: 'flex-end' }}>
           <Text style={[s.remaining, over && { color: t.over }]}>
@@ -422,12 +438,13 @@ function History({
   const insets = useSafeAreaInsets();
 
   const rows = useMemo(() => {
-    const totals = new Map<string, { kcal: number; carbs: number; count: number }>();
-    for (const d of Object.keys(data.weights)) totals.set(d, { kcal: 0, carbs: 0, count: 0 });
+    const totals = new Map<string, { kcal: number; carbs: number; protein: number; count: number }>();
+    for (const d of Object.keys(data.weights)) totals.set(d, { kcal: 0, carbs: 0, protein: 0, count: 0 });
     for (const e of data.entries) {
-      const cur = totals.get(e.date) ?? { kcal: 0, carbs: 0, count: 0 };
+      const cur = totals.get(e.date) ?? { kcal: 0, carbs: 0, protein: 0, count: 0 };
       cur.kcal += e.kcal;
       cur.carbs += e.carbs ?? 0;
+      cur.protein += e.protein ?? 0;
       cur.count += 1;
       totals.set(e.date, cur);
     }
@@ -551,6 +568,7 @@ function History({
             </Text>
             <Text style={[s.entryKcal, s.colKcal, over && { color: t.over }]}>{item.kcal.toLocaleString()}</Text>
             <Text style={[s.entryCarbs, s.colCarbs]}>{item.carbs}g</Text>
+            <Text style={[s.entryCarbs, s.colCarbs]}>{item.protein}g</Text>
           </Pressable>
         );
       }}
@@ -786,8 +804,8 @@ const styles = (t: Theme) =>
       letterSpacing: 0.5,
     },
     mealTotal: { fontSize: 12, fontWeight: '700', color: t.muted, fontVariant: ['tabular-nums'] },
-    colKcal: { width: 44, textAlign: 'right' },
-    colCarbs: { width: 40, textAlign: 'right' },
+    colKcal: { width: 40, textAlign: 'right' },
+    colCarbs: { width: 44, textAlign: 'right' },
     colHeader: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, paddingRight: 40, paddingTop: 2 },
     colHeaderText: { fontSize: 11, color: t.muted, fontWeight: '600' },
     carbsTotal: { fontSize: 18, fontWeight: '700', color: t.text, fontVariant: ['tabular-nums'] },

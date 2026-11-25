@@ -3,7 +3,7 @@
 //
 // Usage: node scripts/build-usda-foods.mjs <path-to-extracted-csv-folder>
 //
-// Output: [[name, kcalPer100g, carbsPer100g, [[unitLabel, grams], ...], [alias, ...]], ...]
+// Output: [[name, kcalPer100g, carbsPer100g, proteinPer100g, [[unitLabel, grams], ...], [alias, ...]], ...]
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,10 +48,11 @@ async function eachRow(file, fn) {
 }
 
 const foods = new Map(); // fdc_id -> { name, kcal, portions: [], aliases: [] }
-await eachRow('food.csv', (r) => foods.set(r.fdc_id, { name: r.description, kcal: null, carbs: 0, portions: [], aliases: [] }));
+await eachRow('food.csv', (r) => foods.set(r.fdc_id, { name: r.description, kcal: null, carbs: 0, protein: 0, portions: [], aliases: [] }));
 await eachRow('food_nutrient.csv', (r) => {
   if ((r.nutrient_id === '1008' || r.nutrient_id === '208') && foods.has(r.fdc_id)) foods.get(r.fdc_id).kcal = Number(r.amount);
   if ((r.nutrient_id === '1005' || r.nutrient_id === '205') && foods.has(r.fdc_id)) foods.get(r.fdc_id).carbs = Number(r.amount);
+  if ((r.nutrient_id === '1003' || r.nutrient_id === '203') && foods.has(r.fdc_id)) foods.get(r.fdc_id).protein = Number(r.amount);
 });
 
 const SKIP_PORTION = /cubic inch|surface inch|yields|guideline|calorie package|^oz\b|^g\b|gram/i;
@@ -116,7 +117,7 @@ for (const f of foods.values()) {
   const portions = f.portions
     .sort((a, b) => (a[0] === 'serving') - (b[0] === 'serving') || a[2] - b[2])
     .map(([l, g]) => [l, g]);
-  const entry = [name, Math.round(f.kcal), Math.round(f.carbs * 10) / 10, portions];
+  const entry = [name, Math.round(f.kcal), Math.round(f.carbs * 10) / 10, Math.round(f.protein * 10) / 10, portions];
   const aliases = [...new Set(f.aliases)].filter((a) => aliasCount.get(a) <= 5);
   if (aliases.length) entry.push(aliases);
   out.push(entry);

@@ -9,6 +9,8 @@ export type FoodOption = {
   countUnit: string | null;
   /** Grams of carbs per kcal; null if unknown. */
   carbsPerKcal: number | null;
+  /** Grams of protein per kcal; null if unknown. */
+  proteinPerKcal: number | null;
   terms: string[];
   source: 'mine' | 'db' | 'usda' | 'online';
 };
@@ -32,6 +34,7 @@ function fromDb(f: DbFood): FoodOption {
     defaultUnit: f.defaultUnit,
     countUnit: f.countUnit,
     carbsPerKcal: f.carbsPerKcal,
+    proteinPerKcal: f.proteinPerKcal,
     terms: f.terms,
     source: f.tier === 0 ? 'db' : 'usda',
   };
@@ -158,6 +161,7 @@ export function mineOptions(saved: Record<string, SavedFood>): FoodOption[] {
         defaultUnit: f.unit in units ? f.unit : Object.keys(units)[0],
         countUnit: f.countUnit ?? null,
         carbsPerKcal: f.carbsPerKcal ?? null,
+        proteinPerKcal: f.proteinPerKcal ?? null,
         terms: [normalize(f.name)],
         source: 'mine' as const,
       };
@@ -222,28 +226,67 @@ export function findExact(query: string, mine: FoodOption[]): FoodOption | null 
 }
 
 const NUMBER_WORDS: Record<string, number> = {
-  a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5,
-  six: 6, seven: 7, eight: 8, nine: 9, ten: 10, half: 0.5, dozen: 12,
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  half: 0.5,
+  dozen: 12,
 };
 
 const FRACTIONS: Record<string, number> = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 1 / 3, '⅔': 2 / 3 };
 
 const UNIT_WORDS: Record<string, string> = {
-  g: 'g', gr: 'g', gram: 'g', grams: 'g',
-  ml: 'ml', milliliter: 'ml', milliliters: 'ml', millilitre: 'ml', millilitres: 'ml',
-  oz: 'oz', ounce: 'oz', ounces: 'oz',
-  cup: 'cup', cups: 'cup',
-  tbsp: 'tbsp', tbs: 'tbsp', tablespoon: 'tbsp', tablespoons: 'tbsp',
-  tsp: 'tsp', teaspoon: 'tsp', teaspoons: 'tsp',
-  slice: 'slice', slices: 'slice',
-  piece: 'piece', pieces: 'piece', pc: 'piece', pcs: 'piece',
-  can: 'can', cans: 'can',
-  glass: 'glass', glasses: 'glass',
-  bottle: 'bottle', bottles: 'bottle',
-  scoop: 'scoop', scoops: 'scoop',
-  serving: 'serving', servings: 'serving',
-  bowl: 'cup', bowls: 'cup',
-  small: 'small', medium: 'medium', large: 'large',
+  g: 'g',
+  gr: 'g',
+  gram: 'g',
+  grams: 'g',
+  ml: 'ml',
+  milliliter: 'ml',
+  milliliters: 'ml',
+  millilitre: 'ml',
+  millilitres: 'ml',
+  oz: 'oz',
+  ounce: 'oz',
+  ounces: 'oz',
+  cup: 'cup',
+  cups: 'cup',
+  tbsp: 'tbsp',
+  tbs: 'tbsp',
+  tablespoon: 'tbsp',
+  tablespoons: 'tbsp',
+  tsp: 'tsp',
+  teaspoon: 'tsp',
+  teaspoons: 'tsp',
+  slice: 'slice',
+  slices: 'slice',
+  piece: 'piece',
+  pieces: 'piece',
+  pc: 'piece',
+  pcs: 'piece',
+  can: 'can',
+  cans: 'can',
+  glass: 'glass',
+  glasses: 'glass',
+  bottle: 'bottle',
+  bottles: 'bottle',
+  scoop: 'scoop',
+  scoops: 'scoop',
+  serving: 'serving',
+  servings: 'serving',
+  bowl: 'cup',
+  bowls: 'cup',
+  small: 'small',
+  medium: 'medium',
+  large: 'large',
 };
 
 function parseAmount(token: string): number | null {

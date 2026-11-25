@@ -19,7 +19,7 @@ import { FoodOption, findExact, mineOptions, parseQuery, resolve, searchFoods, s
 import { OnlineError, searchOnline } from './online';
 import {
   calcCalories,
-  calcCarbs,
+  calcGrams,
   Entry,
   entryMeal,
   Meal,
@@ -36,8 +36,14 @@ export type EntryDraft = Pick<Entry, 'name' | 'amount' | 'unit' | 'kcalPer'> & {
   meal: Meal;
   /** Grams of carbs per kcal for this food; null if unknown. */
   carbsPerKcal: number | null;
+  proteinPerKcal: number | null;
   /** Set when the food should be saved to the user's foods (typed calories or online pick). */
-  remember: null | { units: Record<string, number>; countUnit: string | null; carbsPerKcal: number | null };
+  remember: null | {
+    units: Record<string, number>;
+    countUnit: string | null;
+    carbsPerKcal: number | null;
+    proteinPerKcal: number | null;
+  };
 };
 
 type Props = {
@@ -104,8 +110,7 @@ export function EntryForm({ visible, editing, defaultMeal, foods, dayLabel, onSa
     setMeal(editing ? entryMeal(editing) : defaultMeal);
     if (editing) {
       const f = findExact(editing.name, mine);
-      const matchesList =
-        !!f && editing.unit in f.units && Math.abs(f.units[editing.unit] - editing.kcalPer) < 0.5;
+      const matchesList = !!f && editing.unit in f.units && Math.abs(f.units[editing.unit] - editing.kcalPer) < 0.5;
       setName(editing.name);
       setAmount(fmt(editing.amount));
       setUnit(editing.unit);
@@ -145,7 +150,9 @@ export function EntryForm({ visible, editing, defaultMeal, foods, dayLabel, onSa
   const query = parsed.query.trim();
   const suggestions = useMemo(() => {
     if (!showSuggestions) return [];
-    return searchFoods(query, mine, 6).filter((o) => o.name !== food?.name).slice(0, 5);
+    return searchFoods(query, mine, 6)
+      .filter((o) => o.name !== food?.name)
+      .slice(0, 5);
   }, [showSuggestions, query, mine, food]);
 
   const onlineForQuery = online.status !== 'idle' && normalize(online.query) === normalize(query) ? online : null;
@@ -216,14 +223,27 @@ export function EntryForm({ visible, editing, defaultMeal, foods, dayLabel, onSa
   const valid = entryName !== '' && amountNum > 0 && kcalPer >= 0 && !Number.isNaN(kcalPer);
   const total = valid ? calcCalories(amountNum, effUnit, kcalPer) : null;
   const carbsPer = food?.carbsPerKcal ?? null;
-  const totalCarbs = total === null ? undefined : calcCarbs(total, carbsPer);
+  const proteinPer = food?.proteinPerKcal ?? null;
+  const totalCarbs = total === null ? undefined : calcGrams(total, carbsPer);
+  const totalProtein = total === null ? undefined : calcGrams(total, proteinPer);
 
   const submit = () => {
     if (!valid) return;
     let remember: EntryDraft['remember'] = null;
-    if (!useList) remember = { units: { [effUnit]: kcalPer }, countUnit: null, carbsPerKcal: carbsPer };
-    else if (food.source === 'online') remember = { units: food.units, countUnit: food.countUnit, carbsPerKcal: carbsPer };
-    onSave({ meal, name: entryName, amount: amountNum, unit: effUnit, kcalPer, carbsPerKcal: carbsPer, remember });
+    if (!useList)
+      remember = { units: { [effUnit]: kcalPer }, countUnit: null, carbsPerKcal: carbsPer, proteinPerKcal: proteinPer };
+    else if (food.source === 'online')
+      remember = { units: food.units, countUnit: food.countUnit, carbsPerKcal: carbsPer, proteinPerKcal: proteinPer };
+    onSave({
+      meal,
+      name: entryName,
+      amount: amountNum,
+      unit: effUnit,
+      kcalPer,
+      carbsPerKcal: carbsPer,
+      proteinPerKcal: proteinPer,
+      remember,
+    });
   };
 
   const confirmDelete = () => {
@@ -375,7 +395,8 @@ export function EntryForm({ visible, editing, defaultMeal, foods, dayLabel, onSa
               <Text style={s.totalLabel}>Total</Text>
               <Text style={s.totalValue}>
                 {total === null ? '—' : `${useList ? '≈ ' : ''}${total} kcal`}
-                {totalCarbs !== undefined && <Text style={s.totalCarbs}>{`  ${totalCarbs} g carbs`}</Text>}
+                {totalCarbs !== undefined && <Text style={s.totalCarbs}>{`  ${totalCarbs}g carbs`}</Text>}
+                {totalProtein !== undefined && <Text style={s.totalCarbs}>{`  ${totalProtein}g protein`}</Text>}
               </Text>
             </View>
           </ScrollView>

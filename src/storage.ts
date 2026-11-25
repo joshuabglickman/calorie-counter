@@ -23,9 +23,9 @@ export function calcCalories(amount: number, unit: Unit, kcalPer: number): numbe
   return Math.round((amount / unitBasis(unit)) * kcalPer);
 }
 
-/** Grams of carbs for an entry's calories, rounded to whole grams. */
-export function calcCarbs(kcal: number, carbsPerKcal: number | null | undefined): number | undefined {
-  return carbsPerKcal == null ? undefined : Math.round(kcal * carbsPerKcal);
+/** Grams of a nutrient (carbs, protein) for an entry's calories, rounded to whole grams. */
+export function calcGrams(kcal: number, perKcal: number | null | undefined): number | undefined {
+  return perKcal == null ? undefined : Math.round(kcal * perKcal);
 }
 
 export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snack';
@@ -62,6 +62,8 @@ export type Entry = {
   kcal: number;
   /** Grams of carbs; undefined if unknown. */
   carbs?: number;
+  /** Grams of protein; undefined if unknown. */
+  protein?: number;
   createdAt: number;
 };
 
@@ -75,6 +77,7 @@ export type SavedFood = {
   units?: Record<string, number>;
   countUnit?: string | null;
   carbsPerKcal?: number | null;
+  proteinPerKcal?: number | null;
   lastUsed: number;
   uses: number;
 };

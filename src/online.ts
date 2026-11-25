@@ -1,4 +1,4 @@
-import { carbsPerKcal, normalize } from './foodDb';
+import { normalize, perKcal } from './foodDb';
 import { FoodOption } from './foodSearch';
 
 /**
@@ -39,8 +39,9 @@ function tidy(text: string): string {
   return lower[0].toUpperCase() + lower.slice(1);
 }
 
-function carbsPer100(f: FdcFood): number | undefined {
-  const n = (f.foodNutrients ?? []).find((x) => x.nutrientNumber === '205' && typeof x.value === 'number');
+/** Grams per 100 g of a nutrient by USDA number ('205' carbs, '203' protein). */
+function gramsPer100(f: FdcFood, nutrientNumber: string): number | undefined {
+  const n = (f.foodNutrients ?? []).find((x) => x.nutrientNumber === nutrientNumber && typeof x.value === 'number');
   return n?.value;
 }
 
@@ -58,7 +59,11 @@ function measureLabel(text: string): { label: string; amount: number } | null {
   const m = text.trim().match(/^(\d+(?:\.\d+)?|\d+\/\d+)?\s*(.*)$/);
   if (!m) return null;
   const amount = m[1]?.includes('/') ? Number(m[1].split('/')[0]) / Number(m[1].split('/')[1]) : Number(m[1] ?? 1);
-  let label = m[2].replace(/\s*\(.*$/, '').split(',')[0].trim().toLowerCase();
+  let label = m[2]
+    .replace(/\s*\(.*$/, '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
   if (label === 'tablespoon') label = 'tbsp';
   if (label === 'teaspoon') label = 'tsp';
   if (!label || label.length > 24 || /quantity not specified/.test(label) || !(amount > 0)) return null;
@@ -92,7 +97,8 @@ function toOption(f: FdcFood): FoodOption | null {
     units,
     defaultUnit: unitOrder[0] ?? (liquid ? 'ml' : 'g'),
     countUnit: unitOrder.find((u) => !['cup', 'tbsp', 'tsp', 'fl oz', 'serving'].includes(u)) ?? null,
-    carbsPerKcal: carbsPerKcal(per100, carbsPer100(f)),
+    carbsPerKcal: perKcal(per100, gramsPer100(f, '205')),
+    proteinPerKcal: perKcal(per100, gramsPer100(f, '203')),
     terms: [normalize(name)],
     source: 'online',
   };
