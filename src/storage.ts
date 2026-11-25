@@ -28,6 +28,17 @@ export function calcGrams(kcal: number, perKcal: number | null | undefined): num
   return perKcal == null ? undefined : Math.round(kcal * perKcal);
 }
 
+/** Net carb grams for an entry's calories, to 0.1 g (small amounts matter on low carb). */
+export function calcCarbs(kcal: number, perKcal: number | null | undefined): number | undefined {
+  return perKcal == null ? undefined : Math.round(kcal * perKcal * 10) / 10;
+}
+
+/** "2.6" under 10 g, whole grams above. */
+export function fmtCarbs(g: number): string {
+  const r = Math.round(g * 10) / 10;
+  return r < 10 ? String(r) : String(Math.round(r));
+}
+
 export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
 export const MEALS: { key: Meal; label: string }[] = [
@@ -60,7 +71,7 @@ export type Entry = {
   unit: Unit;
   kcalPer: number; // per 1 unit, or per 100 for g/ml
   kcal: number;
-  /** Grams of carbs; undefined if unknown. */
+  /** Grams of net carbs (total minus fiber); undefined if unknown. */
   carbs?: number;
   /** Grams of protein; undefined if unknown. */
   protein?: number;
@@ -91,6 +102,8 @@ export type Data = {
   goal: number;
   /** Daily carb limit in grams. */
   carbGoal: number;
+  /** True once stored carbs were converted from total to net carbs. */
+  netCarbs?: boolean;
   /** Daily protein target in grams; undefined until set. */
   proteinGoal?: number;
   /** Daily sodium limit in mg; undefined until set. */
@@ -128,6 +141,7 @@ export function parseData(parsed: Partial<Data>): Data {
     proteinGoal: typeof parsed.proteinGoal === 'number' && parsed.proteinGoal > 0 ? parsed.proteinGoal : undefined,
     sodiumGoal: typeof parsed.sodiumGoal === 'number' && parsed.sodiumGoal > 0 ? parsed.sodiumGoal : undefined,
     weightGoal: typeof parsed.weightGoal === 'number' && parsed.weightGoal > 0 ? parsed.weightGoal : undefined,
+    netCarbs: parsed.netCarbs === true,
     weights: parsed.weights ?? {},
     weightUnit: parsed.weightUnit === 'kg' ? 'kg' : 'lb',
   };

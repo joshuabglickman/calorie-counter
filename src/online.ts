@@ -1,4 +1,4 @@
-import { normalize, perKcal } from './foodDb';
+import { netCarbs, normalize, perKcal } from './foodDb';
 import { FoodOption } from './foodSearch';
 
 /**
@@ -97,7 +97,8 @@ function toOption(f: FdcFood): FoodOption | null {
     units,
     defaultUnit: unitOrder[0] ?? (liquid ? 'ml' : 'g'),
     countUnit: unitOrder.find((u) => !['cup', 'tbsp', 'tsp', 'fl oz', 'serving'].includes(u)) ?? null,
-    carbsPerKcal: perKcal(per100, gramsPer100(f, '205')),
+    // Net carbs: total carbs ('205') minus fiber ('291').
+    carbsPerKcal: perKcal(per100, netCarbs(gramsPer100(f, '205'), gramsPer100(f, '291'))),
     proteinPerKcal: perKcal(per100, gramsPer100(f, '203')),
     sodiumPerKcal: perKcal(per100, gramsPer100(f, '307')),
     terms: [normalize(name)],

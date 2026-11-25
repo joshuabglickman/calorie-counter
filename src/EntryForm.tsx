@@ -19,7 +19,9 @@ import { FoodOption, findExact, mineOptions, parseQuery, resolve, searchFoods, s
 import { OnlineError, searchOnline } from './online';
 import {
   calcCalories,
+  calcCarbs,
   calcGrams,
+  fmtCarbs,
   Entry,
   entryMeal,
   Meal,
@@ -227,7 +229,7 @@ export function EntryForm({ visible, editing, defaultMeal, foods, dayLabel, onSa
   const carbsPer = food?.carbsPerKcal ?? null;
   const proteinPer = food?.proteinPerKcal ?? null;
   const sodiumPer = food?.sodiumPerKcal ?? null;
-  const totalCarbs = total === null ? undefined : calcGrams(total, carbsPer);
+  const totalCarbs = total === null ? undefined : calcCarbs(total, carbsPer);
   const totalProtein = total === null ? undefined : calcGrams(total, proteinPer);
   const totalSodium = total === null ? undefined : calcGrams(total, sodiumPer);
 
@@ -397,7 +399,7 @@ export function EntryForm({ visible, editing, defaultMeal, foods, dayLabel, onSa
               <Text style={s.totalLabel}>Total</Text>
               <Text style={s.totalValue}>
                 {total === null ? '—' : `${useList ? '≈ ' : ''}${total} kcal`}
-                {totalCarbs !== undefined && <Text style={s.totalCarbs}>{`  ${totalCarbs}g carbs`}</Text>}
+                {totalCarbs !== undefined && <Text style={s.totalCarbs}>{`  ${fmtCarbs(totalCarbs)}g net carbs`}</Text>}
                 {totalProtein !== undefined && <Text style={s.totalCarbs}>{`  ${totalProtein}g protein`}</Text>}
                 {totalSodium !== undefined && <Text style={s.totalCarbs}>{`  ${totalSodium}mg sodium`}</Text>}
               </Text>

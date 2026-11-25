@@ -24,7 +24,9 @@ import { normalize } from './src/foodDb';
 import { findExact, mineOptions } from './src/foodSearch';
 import {
   calcCalories,
+  calcCarbs,
   calcGrams,
+  fmtCarbs,
   convertWeights,
   Data,
   DEFAULT_DATA,
@@ -71,18 +73,30 @@ function Main() {
 
   useEffect(() => {
     loadData().then((d) => {
-      const mine = mineOptions(d.foods);
+      // One-time switch from total to net carbs: refresh saved foods that are in the
+      // built-in lists, then recompute carbs on every entry we can look up.
+      const migrate = !d.netCarbs;
+      let foods = d.foods;
+      if (migrate) {
+        foods = { ...d.foods };
+        for (const [key, f] of Object.entries(foods)) {
+          const db = findExact(f.name, []);
+          if (db?.carbsPerKcal != null) foods[key] = { ...f, carbsPerKcal: db.carbsPerKcal };
+        }
+      }
+      const mine = mineOptions(foods);
       const entries = d.entries.map((e) => {
-        if (e.carbs !== undefined && e.protein !== undefined && e.sodium !== undefined) return e;
+        if (!migrate && e.carbs !== undefined && e.protein !== undefined && e.sodium !== undefined) return e;
         const f = findExact(e.name, mine);
+        const net = migrate ? calcCarbs(e.kcal, f?.carbsPerKcal) : undefined;
         return {
           ...e,
-          carbs: e.carbs ?? calcGrams(e.kcal, f?.carbsPerKcal),
+          carbs: net ?? e.carbs ?? calcCarbs(e.kcal, f?.carbsPerKcal),
           protein: e.protein ?? calcGrams(e.kcal, f?.proteinPerKcal),
           sodium: e.sodium ?? calcGrams(e.kcal, f?.sodiumPerKcal),
         };
       });
-      setData({ ...d, entries });
+      setData({ ...d, foods, entries, netCarbs: true });
       setLoaded(true);
     });
   }, []);
@@ -144,7 +158,7 @@ function Main() {
     (draft: EntryDraft) => {
       const kcal = calcCalories(draft.amount, draft.unit, draft.kcalPer);
       const { remember, carbsPerKcal, proteinPerKcal, sodiumPerKcal, ...fields } = draft;
-      const carbs = calcGrams(kcal, carbsPerKcal);
+      const carbs = calcCarbs(kcal, carbsPerKcal);
       const protein = calcGrams(kcal, proteinPerKcal);
       const sodium = calcGrams(kcal, sodiumPerKcal);
       setData((prev) => {
@@ -299,7 +313,7 @@ function Main() {
                   <Text style={s.mealAddText}>＋</Text>
                 </Pressable>
                 <Text style={[s.mealTotal, s.colKcal]}>{section.count ? section.total.toLocaleString() : ''}</Text>
-                <Text style={[s.mealTotal, s.colCarbs]}>{section.count ? `${section.carbs}g` : ''}</Text>
+                <Text style={[s.mealTotal, s.colCarbs]}>{section.count ? `${fmtCarbs(section.carbs)}g` : ''}</Text>
                 <Text style={[s.mealTotal, s.colCarbs]}>{section.count ? `${section.protein}g` : ''}</Text>
                 <Text style={[s.mealTotal, s.colNa]}>{section.count ? section.sodium.toLocaleString() : ''}</Text>
               </View>
@@ -319,7 +333,7 @@ function Main() {
                   <Text style={s.entryMeta}> {formatAmount(item.amount, item.unit)}</Text>
                 </Text>
                 <Text style={[s.entryKcal, s.colKcal]}>{item.kcal}</Text>
-                <Text style={[s.entryCarbs, s.colCarbs]}>{item.carbs === undefined ? '–' : `${item.carbs}g`}</Text>
+                <Text style={[s.entryCarbs, s.colCarbs]}>{item.carbs === undefined ? '–' : `${fmtCarbs(item.carbs)}g`}</Text>
                 <Text style={[s.entryCarbs, s.colCarbs]}>{item.protein === undefined ? '–' : `${item.protein}g`}</Text>
                 <Text style={[s.entryCarbs, s.colNa]}>
                   {item.sodium === undefined ? '–' : item.sodium.toLocaleString()}
@@ -402,7 +416,7 @@ type Editable = GoalKey | 'weight';
 
 const GOALS: Record<GoalKey, { title: string; field: 'goal' | 'carbGoal' | 'proteinGoal' | 'sodiumGoal' }> = {
   kcal: { title: 'Daily calorie goal', field: 'goal' },
-  carbs: { title: 'Daily carb limit (g)', field: 'carbGoal' },
+  carbs: { title: 'Daily net carb limit (g)', field: 'carbGoal' },
   protein: { title: 'Daily protein target (g)', field: 'proteinGoal' },
   sodium: { title: 'Daily sodium limit (mg)', field: 'sodiumGoal' },
 };
@@ -455,7 +469,7 @@ function TotalCard({
   return (
     <View style={[s.card, s.statGrid]}>
       {cell('kcal', 'Calories', total.toLocaleString(), goal.toLocaleString(), total > goal ? t.over : undefined)}
-      {cell('carbs', 'Carbs', String(carbs), String(carbGoal), carbs > carbGoal ? t.over : undefined)}
+      {cell('carbs', 'Net carbs', fmtCarbs(carbs), String(carbGoal), Math.round(carbs * 10) / 10 > carbGoal ? t.over : undefined)}
       {cell(
         'protein',
         'Protein',
@@ -620,7 +634,7 @@ function History({
               </Text>
             </Text>
             <Text style={[s.entryKcal, s.colKcal, over && { color: t.over }]}>{item.kcal.toLocaleString()}</Text>
-            <Text style={[s.entryCarbs, s.colCarbs]}>{item.carbs}g</Text>
+            <Text style={[s.entryCarbs, s.colCarbs]}>{fmtCarbs(item.carbs)}g</Text>
             <Text style={[s.entryCarbs, s.colCarbs]}>{item.protein}g</Text>
             <Text style={[s.entryCarbs, s.colNa]}>{item.sodium.toLocaleString()}</Text>
           </Pressable>

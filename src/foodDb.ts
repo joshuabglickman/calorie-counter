@@ -6,6 +6,7 @@
 
 /** [name, kcal per 100 g/ml, portion grams by unit, aliases, isLiquid] */
 import { CARBS_PER_100 } from './carbs';
+import { FIBER_PER_100 } from './fiber';
 import { PROTEIN_PER_100 } from './protein';
 import { SODIUM_PER_100 } from './sodium';
 
@@ -267,9 +268,8 @@ const RAW: Raw[] = [
   ['Spirits', 231, { serving: 42 }, ['vodka', 'whiskey', 'whisky', 'rum', 'gin', 'tequila', 'shot', 'liquor'], true],
 ];
 
-/** [name, kcal/100 g, carbs g/100 g, protein g/100 g, sodium mg/100 g, [[unit, grams], ...], aliases?] from scripts/build-usda-foods.mjs */
+/** [name, kcal/100 g, net carbs g/100 g, protein g/100 g, sodium mg/100 g, [[unit, grams], ...], aliases?] from scripts/build-usda-foods.mjs */
 type UsdaRaw = [string, number, number, number, number, [string, number][], string[]?];
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const USDA: UsdaRaw[] = require('./data/usda-foods.json');
 
 export type DbFood = {
@@ -281,7 +281,7 @@ export type DbFood = {
   countUnit: string | null;
   /** Normalized name followed by normalized aliases. */
   terms: string[];
-  /** Grams of carbs per kcal (same for every unit); null if unknown. */
+  /** Grams of net carbs (total minus fiber) per kcal (same for every unit); null if unknown. */
   carbsPerKcal: number | null;
   /** Grams of protein per kcal; null if unknown. */
   proteinPerKcal: number | null;
@@ -352,6 +352,12 @@ function makeFood(
   };
 }
 
+/** Net carbs: total carbs minus fiber, never below 0. */
+export function netCarbs(carbs: number | undefined, fiber: number | undefined): number | undefined {
+  if (carbs === undefined) return undefined;
+  return Math.max(0, carbs - (fiber ?? 0));
+}
+
 /** Grams of a nutrient per kcal, from per-100 g values (same for every unit). */
 export function perKcal(kcal100: number, grams100: number | undefined): number | null {
   if (grams100 === undefined) return null;
@@ -363,7 +369,7 @@ export const FOOD_DB: DbFood[] = [
     makeFood(
       name,
       per100,
-      CARBS_PER_100[name],
+      netCarbs(CARBS_PER_100[name], FIBER_PER_100[name]),
       PROTEIN_PER_100[name],
       SODIUM_PER_100[name],
       Object.entries(portions),
