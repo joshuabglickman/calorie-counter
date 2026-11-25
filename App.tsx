@@ -14,6 +14,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppVersion } from './src/AppVersion';
 import { exportBackup, pickBackup, saveBackupToFolder } from './src/backup';
@@ -51,6 +52,8 @@ export default function App() {
 }
 
 type Tab = 'day' | 'history';
+
+const COLLAPSED_KEY = 'caloriecounter:collapsedMeals';
 
 function Main() {
   const t = useTheme();
@@ -102,19 +105,37 @@ function Main() {
   const dayTotal = dayEntries.reduce((sum, e) => sum + e.kcal, 0);
   const dayCarbs = dayEntries.reduce((sum, e) => sum + (e.carbs ?? 0), 0);
   const dayProtein = dayEntries.reduce((sum, e) => sum + (e.protein ?? 0), 0);
+  // Collapsed meals (remembered on this phone across days and restarts).
+  const [collapsed, setCollapsed] = useState<Meal[]>([]);
+  useEffect(() => {
+    AsyncStorage.getItem(COLLAPSED_KEY)
+      .then((raw) => raw && setCollapsed(JSON.parse(raw)))
+      .catch(() => {});
+  }, []);
+  const toggleMeal = (meal: Meal) => {
+    setCollapsed((prev) => {
+      const next = prev.includes(meal) ? prev.filter((m) => m !== meal) : [...prev, meal];
+      AsyncStorage.setItem(COLLAPSED_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  };
+
   const sections = useMemo(
     () =>
       MEALS.map((m) => {
         const items = dayEntries.filter((e) => entryMeal(e) === m.key);
+        const isCollapsed = collapsed.includes(m.key);
         return {
           ...m,
-          data: items,
+          data: isCollapsed ? [] : items,
+          count: items.length,
+          isCollapsed,
           total: items.reduce((sum, e) => sum + e.kcal, 0),
           carbs: items.reduce((sum, e) => sum + (e.carbs ?? 0), 0),
           protein: items.reduce((sum, e) => sum + (e.protein ?? 0), 0),
         };
       }),
-    [dayEntries],
+    [dayEntries, collapsed],
   );
 
   const saveEntry = useCallback(
@@ -242,12 +263,23 @@ function Main() {
             contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 80 }}
             renderSectionHeader={({ section }) => (
               <View style={s.mealHeader}>
-                <Text style={s.mealTitle}>{section.label}</Text>
-                <Text style={[s.mealTotal, s.colKcal]}>
-                  {section.data.length ? section.total.toLocaleString() : ''}
-                </Text>
-                <Text style={[s.mealTotal, s.colCarbs]}>{section.data.length ? `${section.carbs}g` : ''}</Text>
-                <Text style={[s.mealTotal, s.colCarbs]}>{section.data.length ? `${section.protein}g` : ''}</Text>
+                <Pressable
+                  onPress={() => toggleMeal(section.key)}
+                  hitSlop={6}
+                  style={s.mealToggle}
+                  accessibilityLabel={`${section.isCollapsed ? 'Expand' : 'Collapse'} ${section.label}`}
+                >
+                  <Text style={s.mealChevron}>{section.isCollapsed ? '▸' : '▾'}</Text>
+                  <Text style={s.mealTitle} numberOfLines={1}>
+                    {section.label}
+                    {section.isCollapsed && section.count > 0 && (
+                      <Text style={s.mealCount}>{`  ${section.count} item${section.count === 1 ? '' : 's'}`}</Text>
+                    )}
+                  </Text>
+                  <Text style={[s.mealTotal, s.colKcal]}>{section.count ? section.total.toLocaleString() : ''}</Text>
+                  <Text style={[s.mealTotal, s.colCarbs]}>{section.count ? `${section.carbs}g` : ''}</Text>
+                  <Text style={[s.mealTotal, s.colCarbs]}>{section.count ? `${section.protein}g` : ''}</Text>
+                </Pressable>
                 <Pressable
                   onPress={() => openAdd(section.key)}
                   hitSlop={10}
@@ -792,11 +824,15 @@ const styles = (t: Theme) =>
     mealHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: 10,
+      paddingLeft: 2,
+      paddingRight: 10,
       paddingTop: 6,
       paddingBottom: 2,
       gap: 8,
     },
+    mealToggle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+    mealChevron: { width: 12, fontSize: 12, color: t.muted, textAlign: 'center' },
+    mealCount: { fontSize: 11, fontWeight: '500', color: t.muted, textTransform: 'none', letterSpacing: 0 },
     mealTitle: {
       flex: 1,
       fontSize: 12,
