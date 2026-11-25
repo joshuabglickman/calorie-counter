@@ -67,7 +67,7 @@ function Main() {
   const [editing, setEditing] = useState<Entry | null>(null);
   const [addMeal, setAddMeal] = useState<Meal>('breakfast');
   const [weightOpen, setWeightOpen] = useState(false);
-  const [goalOpen, setGoalOpen] = useState<null | 'kcal' | 'carbs' | 'protein'>(null);
+  const [goalOpen, setGoalOpen] = useState<null | GoalKey>(null);
 
   useEffect(() => {
     loadData().then((d) => {
@@ -105,6 +105,7 @@ function Main() {
   const dayTotal = dayEntries.reduce((sum, e) => sum + e.kcal, 0);
   const dayCarbs = dayEntries.reduce((sum, e) => sum + (e.carbs ?? 0), 0);
   const dayProtein = dayEntries.reduce((sum, e) => sum + (e.protein ?? 0), 0);
+  const daySodium = dayEntries.reduce((sum, e) => sum + (e.sodium ?? 0), 0);
   // Collapsed meals (remembered on this phone across days and restarts).
   const [collapsed, setCollapsed] = useState<Meal[]>([]);
   useEffect(() => {
@@ -249,6 +250,8 @@ function Main() {
             total={dayTotal}
             carbs={dayCarbs}
             protein={dayProtein}
+            sodium={daySodium}
+            sodiumGoal={data.sodiumGoal}
             goal={data.goal}
             carbGoal={data.carbGoal}
             proteinGoal={data.proteinGoal}
@@ -382,23 +385,11 @@ function Main() {
 
       <GoalModal
         visible={goalOpen !== null}
-        title={
-          goalOpen === 'carbs'
-            ? 'Daily carb limit (g)'
-            : goalOpen === 'protein'
-              ? 'Daily protein target (g)'
-              : 'Daily calorie goal'
-        }
-        goal={goalOpen === 'carbs' ? data.carbGoal : goalOpen === 'protein' ? data.proteinGoal : data.goal}
+        title={goalOpen ? GOALS[goalOpen].title : ''}
+        goal={goalOpen ? data[GOALS[goalOpen].field] : undefined}
         onClose={() => setGoalOpen(null)}
         onSave={(value) => {
-          setData((prev) =>
-            goalOpen === 'carbs'
-              ? { ...prev, carbGoal: value }
-              : goalOpen === 'protein'
-                ? { ...prev, proteinGoal: value }
-                : { ...prev, goal: value },
-          );
+          if (goalOpen) setData((prev) => ({ ...prev, [GOALS[goalOpen].field]: value }));
           setGoalOpen(null);
         }}
       />
@@ -406,16 +397,26 @@ function Main() {
   );
 }
 
-type Editable = 'kcal' | 'carbs' | 'protein' | 'weight';
+type GoalKey = 'kcal' | 'carbs' | 'protein' | 'sodium';
+type Editable = GoalKey | 'weight';
 
-/** Compact 2x2 summary: "Calories 1,501/1,500", "Carbs 20/20", "Protein 118/?", "Weight 172/155". Tap to edit. */
+const GOALS: Record<GoalKey, { title: string; field: 'goal' | 'carbGoal' | 'proteinGoal' | 'sodiumGoal' }> = {
+  kcal: { title: 'Daily calorie goal', field: 'goal' },
+  carbs: { title: 'Daily carb limit (g)', field: 'carbGoal' },
+  protein: { title: 'Daily protein target (g)', field: 'proteinGoal' },
+  sodium: { title: 'Daily sodium limit (mg)', field: 'sodiumGoal' },
+};
+
+/** Compact summary grid ("Calories: 1,501/1,500", "Sodium: 1,240/2,300"...). Tap an item to edit it. */
 function TotalCard({
   total,
   carbs,
   protein,
+  sodium,
   goal,
   carbGoal,
   proteinGoal,
+  sodiumGoal,
   weight,
   weightGoal,
   onEdit,
@@ -423,9 +424,11 @@ function TotalCard({
   total: number;
   carbs: number;
   protein: number;
+  sodium: number;
   goal: number;
   carbGoal: number;
   proteinGoal: number | undefined;
+  sodiumGoal: number | undefined;
   weight: number | undefined;
   weightGoal: number | undefined;
   onEdit: (what: Editable) => void;
@@ -459,6 +462,13 @@ function TotalCard({
         String(protein),
         fmt(proteinGoal),
         proteinGoal !== undefined && protein >= proteinGoal ? t.accent : undefined,
+      )}
+      {cell(
+        'sodium',
+        'Sodium',
+        sodium.toLocaleString(),
+        fmt(sodiumGoal),
+        sodiumGoal !== undefined && sodium > sodiumGoal ? t.over : undefined,
       )}
       {cell('weight', 'Weight', weight === undefined ? '—' : String(weight), fmt(weightGoal))}
     </View>

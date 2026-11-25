@@ -93,6 +93,8 @@ export type Data = {
   carbGoal: number;
   /** Daily protein target in grams; undefined until set. */
   proteinGoal?: number;
+  /** Daily sodium limit in mg; undefined until set. */
+  sodiumGoal?: number;
   /** Goal body weight in weightUnit; undefined until set. */
   weightGoal?: number;
   /** Body weight by day (YYYY-MM-DD), in weightUnit. */
@@ -124,6 +126,7 @@ export function parseData(parsed: Partial<Data>): Data {
     goal: typeof parsed.goal === 'number' && parsed.goal > 0 ? parsed.goal : DEFAULT_DATA.goal,
     carbGoal: typeof parsed.carbGoal === 'number' && parsed.carbGoal > 0 ? parsed.carbGoal : DEFAULT_DATA.carbGoal,
     proteinGoal: typeof parsed.proteinGoal === 'number' && parsed.proteinGoal > 0 ? parsed.proteinGoal : undefined,
+    sodiumGoal: typeof parsed.sodiumGoal === 'number' && parsed.sodiumGoal > 0 ? parsed.sodiumGoal : undefined,
     weightGoal: typeof parsed.weightGoal === 'number' && parsed.weightGoal > 0 ? parsed.weightGoal : undefined,
     weights: parsed.weights ?? {},
     weightUnit: parsed.weightUnit === 'kg' ? 'kg' : 'lb',
