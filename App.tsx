@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { exportBackup, pickBackup } from './src/backup';
+import { exportBackup, pickBackup, saveBackupToFolder } from './src/backup';
 import { addDays, formatDay, todayKey } from './src/dates';
 import { EntryDraft, EntryForm } from './src/EntryForm';
 import { normalize } from './src/foodDb';
@@ -447,6 +447,18 @@ function History({
     }
   };
 
+  const doSave = async () => {
+    setBusy(true);
+    try {
+      const folder = await saveBackupToFolder(data);
+      if (folder) Alert.alert('Backup saved', `Saved to “${folder}”. Pick it from there with “Restore from file”.`);
+    } catch (e) {
+      Alert.alert('Backup failed', e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const doRestore = async () => {
     let restored: Data | null;
     try {
@@ -496,20 +508,30 @@ function History({
         <View style={s.backup}>
           <Text style={s.backupTitle}>Backup</Text>
           <Text style={s.goalText}>
-            Your data is stored only on this phone. Save a backup file to Google Drive, email or Files now and then.
+            Your data is stored only on this phone. Save a backup now and then: to a folder on the phone (e.g.
+            Download), or share it to Google Drive or email.
           </Text>
           <View style={s.backupButtons}>
+            {Platform.OS === 'android' && (
+              <Pressable
+                onPress={doSave}
+                disabled={busy}
+                style={({ pressed }) => [s.backupBtn, pressed && { opacity: 0.6 }]}
+              >
+                <Text style={s.backupBtnText}>Save to phone</Text>
+              </Pressable>
+            )}
             <Pressable
               onPress={doExport}
               disabled={busy}
               style={({ pressed }) => [s.backupBtn, pressed && { opacity: 0.6 }]}
             >
-              <Text style={s.backupBtnText}>{busy ? 'Preparing…' : 'Export backup'}</Text>
-            </Pressable>
-            <Pressable onPress={doRestore} style={({ pressed }) => [s.backupBtn, pressed && { opacity: 0.6 }]}>
-              <Text style={s.backupBtnText}>Restore from file</Text>
+              <Text style={s.backupBtnText}>Share…</Text>
             </Pressable>
           </View>
+          <Pressable onPress={doRestore} style={({ pressed }) => [s.backupBtn, pressed && { opacity: 0.6 }]}>
+            <Text style={s.backupBtnText}>Restore from file</Text>
+          </Pressable>
         </View>
       }
       renderItem={({ item }) => {
