@@ -256,6 +256,14 @@ function Main() {
             onPress={() => setWeightOpen(true)}
           />
 
+          {/* Column headers stay put while the list scrolls. */}
+          {dayEntries.length > 0 && (
+            <View style={s.colHeader}>
+              <Text style={[s.colHeaderText, s.colKcal]}>kcal</Text>
+              <Text style={[s.colHeaderText, s.colCarbs]}>carbs</Text>
+              <Text style={[s.colHeaderText, s.colCarbs]}>protein</Text>
+            </View>
+          )}
           <SectionList
             sections={sections}
             keyExtractor={(e) => e.id}
@@ -309,15 +317,6 @@ function Main() {
                 <Text style={[s.entryCarbs, s.colCarbs]}>{item.protein === undefined ? '–' : `${item.protein}g`}</Text>
               </Pressable>
             )}
-            ListHeaderComponent={
-              dayEntries.length > 0 ? (
-                <View style={s.colHeader}>
-                  <Text style={[s.colHeaderText, s.colKcal]}>kcal</Text>
-                  <Text style={[s.colHeaderText, s.colCarbs]}>carbs</Text>
-                  <Text style={[s.colHeaderText, s.colCarbs]}>protein</Text>
-                </View>
-              ) : undefined
-            }
             ListFooterComponent={
               dayEntries.length === 0 ? (
                 <Text style={s.empty}>Nothing logged {isToday ? 'yet today' : 'this day'}.</Text>
@@ -844,7 +843,16 @@ const styles = (t: Theme) =>
     mealTotal: { fontSize: 12, fontWeight: '700', color: t.muted, fontVariant: ['tabular-nums'] },
     colKcal: { width: 40, textAlign: 'right' },
     colCarbs: { width: 44, textAlign: 'right' },
-    colHeader: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, paddingRight: 40, paddingTop: 2 },
+    colHeader: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 8,
+      paddingRight: 12 + 40,
+      paddingTop: 2,
+      paddingBottom: 2,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: t.border,
+    },
     colHeaderText: { fontSize: 11, color: t.muted, fontWeight: '600' },
     carbsTotal: { fontSize: 18, fontWeight: '700', color: t.text, fontVariant: ['tabular-nums'] },
     entryCarbs: { fontSize: 13, color: t.muted, fontVariant: ['tabular-nums'] },
