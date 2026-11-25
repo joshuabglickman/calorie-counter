@@ -21,7 +21,9 @@ export async function exportBackup(data: Data): Promise<void> {
 /** Lets the user pick a backup file. Returns null if they cancel. Throws if the file isn't a backup. */
 export async function pickBackup(): Promise<Data | null> {
   const res = await DocumentPicker.getDocumentAsync({
-    type: ['application/json', 'text/plain', 'application/octet-stream'],
+    // Android often doesn't label .json files as JSON (Drive, Downloads), so show every file
+    // and check the contents instead.
+    type: '*/*',
     copyToCacheDirectory: true,
   });
   if (res.canceled || !res.assets?.length) return null;
