@@ -88,6 +88,10 @@ export type Data = {
   goal: number;
   /** Daily carb limit in grams. */
   carbGoal: number;
+  /** Daily protein target in grams; undefined until set. */
+  proteinGoal?: number;
+  /** Goal body weight in weightUnit; undefined until set. */
+  weightGoal?: number;
   /** Body weight by day (YYYY-MM-DD), in weightUnit. */
   weights: Record<string, number>;
   weightUnit: WeightUnit;
@@ -116,6 +120,8 @@ export function parseData(parsed: Partial<Data>): Data {
     foods: parsed.foods ?? {},
     goal: typeof parsed.goal === 'number' && parsed.goal > 0 ? parsed.goal : DEFAULT_DATA.goal,
     carbGoal: typeof parsed.carbGoal === 'number' && parsed.carbGoal > 0 ? parsed.carbGoal : DEFAULT_DATA.carbGoal,
+    proteinGoal: typeof parsed.proteinGoal === 'number' && parsed.proteinGoal > 0 ? parsed.proteinGoal : undefined,
+    weightGoal: typeof parsed.weightGoal === 'number' && parsed.weightGoal > 0 ? parsed.weightGoal : undefined,
     weights: parsed.weights ?? {},
     weightUnit: parsed.weightUnit === 'kg' ? 'kg' : 'lb',
   };

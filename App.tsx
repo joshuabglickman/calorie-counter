@@ -37,7 +37,6 @@ import {
   loadData,
   newId,
   parseNumber,
-  previousWeight,
   saveData,
   WeightUnit,
 } from './src/storage';
@@ -68,7 +67,7 @@ function Main() {
   const [editing, setEditing] = useState<Entry | null>(null);
   const [addMeal, setAddMeal] = useState<Meal>('breakfast');
   const [weightOpen, setWeightOpen] = useState(false);
-  const [goalOpen, setGoalOpen] = useState<null | 'kcal' | 'carbs'>(null);
+  const [goalOpen, setGoalOpen] = useState<null | 'kcal' | 'carbs' | 'protein'>(null);
 
   useEffect(() => {
     loadData().then((d) => {
@@ -245,15 +244,10 @@ function Main() {
             protein={dayProtein}
             goal={data.goal}
             carbGoal={data.carbGoal}
-            onEditGoal={() => setGoalOpen('kcal')}
-            onEditCarbGoal={() => setGoalOpen('carbs')}
-          />
-          <WeightRow
+            proteinGoal={data.proteinGoal}
             weight={data.weights[day]}
-            previous={previousWeight(data.weights, day)}
-            unit={data.weightUnit}
-            isToday={isToday}
-            onPress={() => setWeightOpen(true)}
+            weightGoal={data.weightGoal}
+            onEdit={(what) => (what === 'weight' ? setWeightOpen(true) : setGoalOpen(what))}
           />
 
           {/* Column headers stay put while the list scrolls. */}
@@ -360,14 +354,15 @@ function Main() {
         visible={weightOpen}
         dayLabel={formatDay(day)}
         weight={data.weights[day]}
+        goal={data.weightGoal}
         unit={data.weightUnit}
         onClose={() => setWeightOpen(false)}
-        onSave={(weight, unit) => {
+        onSave={(weight, goal, unit) => {
           setData((prev) => {
             const weights = { ...convertWeights(prev.weights, prev.weightUnit, unit) };
             if (weight === null) delete weights[day];
             else weights[day] = weight;
-            return { ...prev, weights, weightUnit: unit };
+            return { ...prev, weights, weightGoal: goal ?? undefined, weightUnit: unit };
           });
           setWeightOpen(false);
         }}
@@ -375,11 +370,23 @@ function Main() {
 
       <GoalModal
         visible={goalOpen !== null}
-        title={goalOpen === 'carbs' ? 'Daily carb limit (g)' : 'Daily calorie goal'}
-        goal={goalOpen === 'carbs' ? data.carbGoal : data.goal}
+        title={
+          goalOpen === 'carbs'
+            ? 'Daily carb limit (g)'
+            : goalOpen === 'protein'
+              ? 'Daily protein target (g)'
+              : 'Daily calorie goal'
+        }
+        goal={goalOpen === 'carbs' ? data.carbGoal : goalOpen === 'protein' ? data.proteinGoal : data.goal}
         onClose={() => setGoalOpen(null)}
         onSave={(value) => {
-          setData((prev) => (goalOpen === 'carbs' ? { ...prev, carbGoal: value } : { ...prev, goal: value }));
+          setData((prev) =>
+            goalOpen === 'carbs'
+              ? { ...prev, carbGoal: value }
+              : goalOpen === 'protein'
+                ? { ...prev, proteinGoal: value }
+                : { ...prev, goal: value },
+          );
           setGoalOpen(null);
         }}
       />
@@ -387,71 +394,61 @@ function Main() {
   );
 }
 
+type Editable = 'kcal' | 'carbs' | 'protein' | 'weight';
+
+/** Compact 2x2 summary: "Calories 1,501/1,500", "Carbs 20/20", "Protein 118/?", "Weight 172/155". Tap to edit. */
 function TotalCard({
   total,
   carbs,
   protein,
   goal,
   carbGoal,
-  onEditGoal,
-  onEditCarbGoal,
+  proteinGoal,
+  weight,
+  weightGoal,
+  onEdit,
 }: {
   total: number;
   carbs: number;
   protein: number;
   goal: number;
   carbGoal: number;
-  onEditGoal: () => void;
-  onEditCarbGoal: () => void;
+  proteinGoal: number | undefined;
+  weight: number | undefined;
+  weightGoal: number | undefined;
+  onEdit: (what: Editable) => void;
 }) {
   const t = useTheme();
   const s = useMemo(() => styles(t), [t]);
-  const over = total > goal;
-  const pct = Math.min(1, total / goal);
-  const remaining = goal - total;
-  const carbsOver = carbs > carbGoal;
+  const fmt = (n: number | undefined) => (n === undefined ? '?' : n.toLocaleString());
+
+  const cell = (what: Editable, label: string, value: string, target: string, color?: string) => (
+    <Pressable
+      key={what}
+      onPress={() => onEdit(what)}
+      hitSlop={4}
+      style={({ pressed }) => [s.statCell, pressed && { opacity: 0.6 }]}
+    >
+      <Text style={s.statText} numberOfLines={1}>
+        <Text style={s.statLabel}>{label}: </Text>
+        <Text style={[s.statValue, color ? { color } : null]}>{value}</Text>
+        <Text style={s.statGoal}>/{target}</Text>
+      </Text>
+    </Pressable>
+  );
 
   return (
-    <View style={s.card}>
-      <View style={s.totalRow}>
-        <View style={s.totalLine}>
-          <Text style={s.bigNumber}>{total.toLocaleString()}</Text>
-          <Text style={s.kcalUnit}>kcal</Text>
-          <Text style={[s.carbsTotal, { marginLeft: 10 }]}>{protein}</Text>
-          <Text style={s.kcalUnit}>g protein</Text>
-        </View>
-        <Pressable onPress={onEditGoal} hitSlop={8} style={{ alignItems: 'flex-end' }}>
-          <Text style={[s.remaining, over && { color: t.over }]}>
-            {over ? `${(-remaining).toLocaleString()} over` : `${remaining.toLocaleString()} left`}
-          </Text>
-          <Text style={s.goalText}>
-            of {goal.toLocaleString()} <Text style={{ color: t.accent }}>· Edit</Text>
-          </Text>
-        </Pressable>
-      </View>
-      <View style={s.track}>
-        <View style={[s.fill, { width: `${pct * 100}%`, backgroundColor: over ? t.over : t.accent }]} />
-      </View>
-      <Pressable onPress={onEditCarbGoal} hitSlop={8} style={[s.totalRow, { marginTop: 8 }]}>
-        <View style={s.totalLine}>
-          <Text style={[s.carbsTotal, carbsOver && { color: t.over }]}>{carbs}</Text>
-          <Text style={s.kcalUnit}>g carbs</Text>
-        </View>
-        <Text style={s.goalText}>
-          <Text style={[s.remaining, carbsOver && { color: t.over }]}>
-            {carbsOver ? `${carbs - carbGoal} g over` : `${carbGoal - carbs} g left`}
-          </Text>{' '}
-          of {carbGoal} g max <Text style={{ color: t.accent }}>· Edit</Text>
-        </Text>
-      </Pressable>
-      <View style={[s.track, { marginTop: 4 }]}>
-        <View
-          style={[
-            s.fill,
-            { width: `${Math.min(1, carbs / carbGoal) * 100}%`, backgroundColor: carbsOver ? t.over : t.accent },
-          ]}
-        />
-      </View>
+    <View style={[s.card, s.statGrid]}>
+      {cell('kcal', 'Calories', total.toLocaleString(), goal.toLocaleString(), total > goal ? t.over : undefined)}
+      {cell('carbs', 'Carbs', String(carbs), String(carbGoal), carbs > carbGoal ? t.over : undefined)}
+      {cell(
+        'protein',
+        'Protein',
+        String(protein),
+        fmt(proteinGoal),
+        proteinGoal !== undefined && protein >= proteinGoal ? t.accent : undefined,
+      )}
+      {cell('weight', 'Weight', weight === undefined ? '—' : String(weight), fmt(weightGoal))}
     </View>
   );
 }
@@ -609,46 +606,11 @@ function History({
   );
 }
 
-function WeightRow({
-  weight,
-  previous,
-  unit,
-  isToday,
-  onPress,
-}: {
-  weight: number | undefined;
-  previous: number | null;
-  unit: WeightUnit;
-  isToday: boolean;
-  onPress: () => void;
-}) {
-  const t = useTheme();
-  const s = useMemo(() => styles(t), [t]);
-  const change = weight !== undefined && previous !== null ? Math.round((weight - previous) * 10) / 10 : null;
-  return (
-    <Pressable onPress={onPress} hitSlop={6} style={({ pressed }) => [s.weightRow, pressed && { opacity: 0.6 }]}>
-      {weight === undefined ? (
-        <Text style={[s.goalText, { color: t.accent, fontWeight: '600' }]}>
-          ＋ Add {isToday ? 'today’s' : 'this day’s'} weight
-        </Text>
-      ) : (
-        <Text style={s.goalText}>
-          Weight{' '}
-          <Text style={s.remaining}>
-            {weight} {unit}
-          </Text>
-          {change !== null && change !== 0 && `  ${change > 0 ? '+' : '−'}${Math.abs(change)} since last`}
-          <Text style={{ color: t.accent }}> · Edit</Text>
-        </Text>
-      )}
-    </Pressable>
-  );
-}
-
 function WeightModal({
   visible,
   dayLabel,
   weight,
+  goal,
   unit,
   onClose,
   onSave,
@@ -656,28 +618,38 @@ function WeightModal({
   visible: boolean;
   dayLabel: string;
   weight: number | undefined;
+  goal: number | undefined;
   unit: WeightUnit;
   onClose: () => void;
-  /** null removes the day's weight. */
-  onSave: (weight: number | null, unit: WeightUnit) => void;
+  /** null weight removes the day's weight; null goal clears the goal. */
+  onSave: (weight: number | null, goal: number | null, unit: WeightUnit) => void;
 }) {
   const t = useTheme();
   const s = useMemo(() => styles(t), [t]);
   const [text, setText] = useState('');
+  const [goalText, setGoalText] = useState('');
   const [u, setU] = useState<WeightUnit>(unit);
 
   useEffect(() => {
     if (visible) {
       setText(weight === undefined ? '' : String(weight));
+      setGoalText(goal === undefined ? '' : String(goal));
       setU(unit);
     }
-  }, [visible, weight, unit]);
+  }, [visible, weight, goal, unit]);
 
-  const n = Math.round(parseNumber(text) * 10) / 10;
-  const valid = n > 0;
+  const toWeight = (str: string) => Math.round(parseNumber(str) * 10) / 10;
+  const n = toWeight(text);
+  const g = toWeight(goalText);
+  const goalValue = g > 0 ? g : null;
+  const goalOk = goalText.trim() === '' || g > 0;
+  const valid = (n > 0 || text.trim() === '') && goalOk;
+  const weightValue = n > 0 ? n : null;
+  const save = () => valid && onSave(weightValue, goalValue, u);
   const switchUnit = (next: WeightUnit) => {
     if (next === u) return;
-    if (valid) setText(String(convertWeights({ x: n }, u, next).x));
+    if (n > 0) setText(String(convertWeights({ x: n }, u, next).x));
+    if (g > 0) setGoalText(String(convertWeights({ x: g }, u, next).x));
     setU(next);
   };
 
@@ -697,7 +669,7 @@ function WeightModal({
               placeholderTextColor={t.muted}
               autoFocus
               selectTextOnFocus
-              onSubmitEditing={() => valid && onSave(n, u)}
+              onSubmitEditing={save}
             />
             <View style={s.tabs}>
               {(['lb', 'kg'] as WeightUnit[]).map((k) => (
@@ -707,16 +679,22 @@ function WeightModal({
               ))}
             </View>
           </View>
+          <Text style={[s.goalText, { marginTop: 14, marginBottom: 6 }]}>Goal weight</Text>
+          <TextInput
+            style={s.dialogInput}
+            value={goalText}
+            onChangeText={setGoalText}
+            keyboardType="decimal-pad"
+            placeholder="optional"
+            placeholderTextColor={t.muted}
+            selectTextOnFocus
+            onSubmitEditing={save}
+          />
           <View style={s.dialogButtons}>
-            {weight !== undefined && (
-              <Pressable onPress={() => onSave(null, u)} hitSlop={8} style={{ marginRight: 'auto' }}>
-                <Text style={[s.dialogBtn, { color: t.danger }]}>Remove</Text>
-              </Pressable>
-            )}
             <Pressable onPress={onClose} hitSlop={8}>
               <Text style={[s.dialogBtn, { color: t.muted }]}>Cancel</Text>
             </Pressable>
-            <Pressable onPress={() => valid && onSave(n, u)} disabled={!valid} hitSlop={8}>
+            <Pressable onPress={save} disabled={!valid} hitSlop={8}>
               <Text style={[s.dialogBtn, { color: t.accent }, !valid && { opacity: 0.4 }]}>Save</Text>
             </Pressable>
           </View>
@@ -735,16 +713,16 @@ function GoalModal({
 }: {
   visible: boolean;
   title: string;
-  goal: number;
+  goal: number | undefined;
   onClose: () => void;
   onSave: (goal: number) => void;
 }) {
   const t = useTheme();
   const s = useMemo(() => styles(t), [t]);
-  const [text, setText] = useState(String(goal));
+  const [text, setText] = useState(goal === undefined ? '' : String(goal));
 
   useEffect(() => {
-    if (visible) setText(String(goal));
+    if (visible) setText(goal === undefined ? '' : String(goal));
   }, [visible, goal]);
 
   const n = Math.round(parseNumber(text));
@@ -811,6 +789,12 @@ const styles = (t: Theme) =>
       paddingHorizontal: 14,
       paddingVertical: 10,
     },
+    statGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingVertical: 6, rowGap: 2 },
+    statCell: { width: '50%', paddingVertical: 3 },
+    statText: { fontSize: 15, color: t.text, fontVariant: ['tabular-nums'] },
+    statLabel: { fontSize: 13, color: t.muted, fontWeight: '600' },
+    statValue: { fontSize: 16, fontWeight: '800', color: t.text },
+    statGoal: { fontSize: 13, color: t.muted, fontWeight: '600' },
     totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     totalLine: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
     bigNumber: { fontSize: 28, fontWeight: '800', color: t.text, fontVariant: ['tabular-nums'] },
@@ -881,7 +865,6 @@ const styles = (t: Theme) =>
     entryName: { flex: 1, fontSize: 14, color: t.text, fontWeight: '500' },
     entryMeta: { fontSize: 13, color: t.muted, fontWeight: '400' },
     entryKcal: { fontSize: 14, color: t.text, fontWeight: '700', fontVariant: ['tabular-nums'] },
-    weightRow: { marginHorizontal: 12, paddingHorizontal: 14, paddingBottom: 2 },
     backup: { backgroundColor: t.card, borderRadius: 12, padding: 12, marginTop: 16, gap: 6 },
     backupTitle: { fontSize: 14, fontWeight: '700', color: t.text },
     backupButtons: { flexDirection: 'row', gap: 8, marginTop: 4 },
