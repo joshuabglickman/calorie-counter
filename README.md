@@ -44,6 +44,18 @@ JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" ANDROID_HOME="$LOCALAPPD
 The APK is written to `android/app/build/outputs/apk/release/app-release.apk`. Copy it to the phone and open it
 to install (allow "install unknown apps" when asked). Installing a newer build over it keeps your data.
 
+## Cloud builds and over-the-air updates (EAS)
+
+The installed app downloads JavaScript updates automatically (EAS Update, `preview` channel):
+
+```bash
+npx eas-cli@latest update --channel preview --message "What changed"   # ship a JS-only change
+npx eas-cli@latest build -p android --profile preview                 # new APK (native changes)
+```
+
+Updates only reach builds with the same `version` in `app.json` (runtime version policy `appVersion`).
+When adding a library with native code, bump `version` and make a new build.
+
 ## Rebuilding the USDA food list
 
 Download the "Survey (FNDDS)" CSV zip from https://fdc.nal.usda.gov/download-datasets, unzip it, then run:

@@ -17,7 +17,10 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "app.caloriecounter"
+      "package": "app.caloriecounter",
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -30,6 +33,9 @@
         "projectId": "8cef1168-8e54-420a-8a71-2fc06a2a138f"
       }
     },
-    "owner": "r0ckteacher"
+    "owner": "r0ckteacher",
+    "updates": {
+      "url": "https://u.expo.dev/8cef1168-8e54-420a-8a71-2fc06a2a138f"
+    }
   }
 }
