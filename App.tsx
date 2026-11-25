@@ -1,0 +1,848 @@
+import { StatusBar } from 'expo-status-bar';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  SectionList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { exportBackup, pickBackup } from './src/backup';
+import { addDays, formatDay, todayKey } from './src/dates';
+import { EntryDraft, EntryForm } from './src/EntryForm';
+import { normalize } from './src/foodDb';
+import { findExact, mineOptions } from './src/foodSearch';
+import {
+  calcCalories,
+  calcCarbs,
+  convertWeights,
+  Data,
+  DEFAULT_DATA,
+  Entry,
+  entryMeal,
+  formatAmount,
+  Meal,
+  mealForTime,
+  MEALS,
+  loadData,
+  newId,
+  parseNumber,
+  previousWeight,
+  saveData,
+  WeightUnit,
+} from './src/storage';
+import { Theme, useTheme } from './src/theme';
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <Main />
+    </SafeAreaProvider>
+  );
+}
+
+type Tab = 'day' | 'history';
+
+function Main() {
+  const t = useTheme();
+  const s = useMemo(() => styles(t), [t]);
+  const insets = useSafeAreaInsets();
+
+  const [data, setData] = useState<Data>(DEFAULT_DATA);
+  const [loaded, setLoaded] = useState(false);
+  const [tab, setTab] = useState<Tab>('day');
+  const [day, setDay] = useState(todayKey());
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Entry | null>(null);
+  const [addMeal, setAddMeal] = useState<Meal>('breakfast');
+  const [weightOpen, setWeightOpen] = useState(false);
+  const [goalOpen, setGoalOpen] = useState<null | 'kcal' | 'carbs'>(null);
+
+  useEffect(() => {
+    loadData().then((d) => {
+      const mine = mineOptions(d.foods);
+      const entries = d.entries.map((e) => {
+        if (e.carbs !== undefined) return e;
+        const carbs = calcCarbs(e.kcal, findExact(e.name, mine)?.carbsPerKcal);
+        return carbs === undefined ? e : { ...e, carbs };
+      });
+      setData({ ...d, entries });
+      setLoaded(true);
+    });
+  }, []);
+
+  // Persist every change after the initial load.
+  const firstSave = useRef(true);
+  useEffect(() => {
+    if (!loaded) return;
+    if (firstSave.current) {
+      firstSave.current = false;
+      return;
+    }
+    saveData(data).catch(() => {});
+  }, [data, loaded]);
+
+  const dayEntries = useMemo(
+    () => data.entries.filter((e) => e.date === day).sort((a, b) => a.createdAt - b.createdAt),
+    [data.entries, day],
+  );
+  const dayTotal = dayEntries.reduce((sum, e) => sum + e.kcal, 0);
+  const dayCarbs = dayEntries.reduce((sum, e) => sum + (e.carbs ?? 0), 0);
+  const sections = useMemo(
+    () =>
+      MEALS.map((m) => {
+        const items = dayEntries.filter((e) => entryMeal(e) === m.key);
+        return {
+          ...m,
+          data: items,
+          total: items.reduce((sum, e) => sum + e.kcal, 0),
+          carbs: items.reduce((sum, e) => sum + (e.carbs ?? 0), 0),
+        };
+      }),
+    [dayEntries],
+  );
+
+  const saveEntry = useCallback(
+    (draft: EntryDraft) => {
+      const kcal = calcCalories(draft.amount, draft.unit, draft.kcalPer);
+      const { remember, carbsPerKcal, ...fields } = draft;
+      const carbs = calcCarbs(kcal, carbsPerKcal);
+      setData((prev) => {
+        const entries = editing
+          ? prev.entries.map((e) => (e.id === editing.id ? { ...e, ...fields, kcal, carbs } : e))
+          : [...prev.entries, { ...fields, kcal, carbs, id: newId(), date: day, createdAt: Date.now() }];
+        // Foods from the built-in lists are looked up again next time; only typed
+        // calories and online picks are saved.
+        if (!remember) return { ...prev, entries };
+        const key = normalize(fields.name);
+        const existing = prev.foods[key];
+        const foods = {
+          ...prev.foods,
+          [key]: {
+            ...fields,
+            units: remember.units,
+            countUnit: remember.countUnit,
+            carbsPerKcal: remember.carbsPerKcal,
+            lastUsed: Date.now(),
+            uses: (existing?.uses ?? 0) + (editing ? 0 : 1),
+          },
+        };
+        return { ...prev, entries, foods };
+      });
+      setFormOpen(false);
+      setEditing(null);
+    },
+    [editing, day],
+  );
+
+  const deleteEntry = useCallback((entry: Entry) => {
+    setData((prev) => ({ ...prev, entries: prev.entries.filter((e) => e.id !== entry.id) }));
+    setFormOpen(false);
+    setEditing(null);
+  }, []);
+
+  const openAdd = (meal?: Meal) => {
+    setAddMeal(meal ?? mealForTime(new Date()));
+    setEditing(null);
+    setFormOpen(true);
+  };
+
+  const openEdit = (e: Entry) => {
+    setEditing(e);
+    setFormOpen(true);
+  };
+
+  if (!loaded) {
+    return (
+      <View style={[s.screen, { justifyContent: 'center' }]}>
+        <ActivityIndicator color={t.accent} />
+      </View>
+    );
+  }
+
+  const isToday = day === todayKey();
+
+  return (
+    <View style={[s.screen, { paddingTop: insets.top }]}>
+      <StatusBar style="auto" />
+
+      <View style={s.header}>
+        {tab === 'day' ? (
+          <View style={s.dateRow}>
+            <Pressable onPress={() => setDay(addDays(day, -1))} hitSlop={10} style={s.arrow}>
+              <Text style={s.arrowText}>‹</Text>
+            </Pressable>
+            <Pressable onPress={() => setDay(todayKey())} disabled={isToday} style={s.dateBtn}>
+              <Text style={s.dateText} numberOfLines={1}>
+                {formatDay(day)}
+              </Text>
+              {!isToday && <Text style={s.backToday}>Back to today</Text>}
+            </Pressable>
+            <Pressable
+              onPress={() => setDay(addDays(day, 1))}
+              hitSlop={10}
+              style={[s.arrow, isToday && { opacity: 0.25 }]}
+              disabled={isToday}
+            >
+              <Text style={s.arrowText}>›</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Text style={[s.dateText, { flex: 1, textAlign: 'left', marginLeft: 4 }]}>History</Text>
+        )}
+        <View style={s.tabs}>
+          {(['day', 'history'] as Tab[]).map((k) => (
+            <Pressable key={k} onPress={() => setTab(k)} style={[s.tab, tab === k && s.tabActive]}>
+              <Text style={[s.tabText, tab === k && s.tabTextActive]}>{k === 'day' ? 'Day' : 'History'}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
+      {tab === 'day' ? (
+        <>
+          <TotalCard
+            total={dayTotal}
+            carbs={dayCarbs}
+            goal={data.goal}
+            carbGoal={data.carbGoal}
+            onEditGoal={() => setGoalOpen('kcal')}
+            onEditCarbGoal={() => setGoalOpen('carbs')}
+          />
+          <WeightRow
+            weight={data.weights[day]}
+            previous={previousWeight(data.weights, day)}
+            unit={data.weightUnit}
+            isToday={isToday}
+            onPress={() => setWeightOpen(true)}
+          />
+
+          <SectionList
+            sections={sections}
+            keyExtractor={(e) => e.id}
+            stickySectionHeadersEnabled={false}
+            contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 80 }}
+            renderSectionHeader={({ section }) => (
+              <View style={s.mealHeader}>
+                <Text style={s.mealTitle}>{section.label}</Text>
+                <Text style={[s.mealTotal, s.colKcal]}>
+                  {section.data.length ? section.total.toLocaleString() : ''}
+                </Text>
+                <Text style={[s.mealTotal, s.colCarbs]}>{section.data.length ? `${section.carbs}g` : ''}</Text>
+                <Pressable
+                  onPress={() => openAdd(section.key)}
+                  hitSlop={10}
+                  style={s.mealAdd}
+                  accessibilityLabel={`Add to ${section.label}`}
+                >
+                  <Text style={s.mealAddText}>＋</Text>
+                </Pressable>
+              </View>
+            )}
+            renderItem={({ item, index, section }) => (
+              <Pressable
+                onPress={() => openEdit(item)}
+                style={({ pressed }) => [
+                  s.entry,
+                  index === 0 && s.entryFirst,
+                  index === section.data.length - 1 && s.entryLast,
+                  pressed && { opacity: 0.6 },
+                ]}
+              >
+                <Text style={s.entryName} numberOfLines={1}>
+                  {item.name}
+                  <Text style={s.entryMeta}> {formatAmount(item.amount, item.unit)}</Text>
+                </Text>
+                <Text style={[s.entryKcal, s.colKcal]}>{item.kcal}</Text>
+                <Text style={[s.entryCarbs, s.colCarbs]}>{item.carbs === undefined ? '–' : `${item.carbs}g`}</Text>
+              </Pressable>
+            )}
+            ListHeaderComponent={
+              dayEntries.length > 0 ? (
+                <View style={s.colHeader}>
+                  <Text style={[s.colHeaderText, s.colKcal]}>kcal</Text>
+                  <Text style={[s.colHeaderText, s.colCarbs]}>carbs</Text>
+                </View>
+              ) : undefined
+            }
+            ListFooterComponent={
+              dayEntries.length === 0 ? (
+                <Text style={s.empty}>Nothing logged {isToday ? 'yet today' : 'this day'}.</Text>
+              ) : undefined
+            }
+          />
+
+          <Pressable
+            onPress={() => openAdd()}
+            style={({ pressed }) => [s.fab, { bottom: insets.bottom + 16 }, pressed && { opacity: 0.85 }]}
+          >
+            <Text style={s.fabText}>＋ Add food</Text>
+          </Pressable>
+        </>
+      ) : (
+        <History
+          data={data}
+          onRestore={(restored) => setData(restored)}
+          onPickDay={(k) => {
+            setDay(k);
+            setTab('day');
+          }}
+        />
+      )}
+
+      <EntryForm
+        visible={formOpen}
+        editing={editing}
+        defaultMeal={addMeal}
+        foods={data.foods}
+        dayLabel={formatDay(day)}
+        onSave={saveEntry}
+        onDelete={deleteEntry}
+        onClose={() => {
+          setFormOpen(false);
+          setEditing(null);
+        }}
+      />
+
+      <WeightModal
+        visible={weightOpen}
+        dayLabel={formatDay(day)}
+        weight={data.weights[day]}
+        unit={data.weightUnit}
+        onClose={() => setWeightOpen(false)}
+        onSave={(weight, unit) => {
+          setData((prev) => {
+            const weights = { ...convertWeights(prev.weights, prev.weightUnit, unit) };
+            if (weight === null) delete weights[day];
+            else weights[day] = weight;
+            return { ...prev, weights, weightUnit: unit };
+          });
+          setWeightOpen(false);
+        }}
+      />
+
+      <GoalModal
+        visible={goalOpen !== null}
+        title={goalOpen === 'carbs' ? 'Daily carb limit (g)' : 'Daily calorie goal'}
+        goal={goalOpen === 'carbs' ? data.carbGoal : data.goal}
+        onClose={() => setGoalOpen(null)}
+        onSave={(value) => {
+          setData((prev) => (goalOpen === 'carbs' ? { ...prev, carbGoal: value } : { ...prev, goal: value }));
+          setGoalOpen(null);
+        }}
+      />
+    </View>
+  );
+}
+
+function TotalCard({
+  total,
+  carbs,
+  goal,
+  carbGoal,
+  onEditGoal,
+  onEditCarbGoal,
+}: {
+  total: number;
+  carbs: number;
+  goal: number;
+  carbGoal: number;
+  onEditGoal: () => void;
+  onEditCarbGoal: () => void;
+}) {
+  const t = useTheme();
+  const s = useMemo(() => styles(t), [t]);
+  const over = total > goal;
+  const pct = Math.min(1, total / goal);
+  const remaining = goal - total;
+  const carbsOver = carbs > carbGoal;
+
+  return (
+    <View style={s.card}>
+      <View style={s.totalRow}>
+        <View style={s.totalLine}>
+          <Text style={s.bigNumber}>{total.toLocaleString()}</Text>
+          <Text style={s.kcalUnit}>kcal</Text>
+        </View>
+        <Pressable onPress={onEditGoal} hitSlop={8} style={{ alignItems: 'flex-end' }}>
+          <Text style={[s.remaining, over && { color: t.over }]}>
+            {over ? `${(-remaining).toLocaleString()} over` : `${remaining.toLocaleString()} left`}
+          </Text>
+          <Text style={s.goalText}>
+            of {goal.toLocaleString()} <Text style={{ color: t.accent }}>· Edit</Text>
+          </Text>
+        </Pressable>
+      </View>
+      <View style={s.track}>
+        <View style={[s.fill, { width: `${pct * 100}%`, backgroundColor: over ? t.over : t.accent }]} />
+      </View>
+      <Pressable onPress={onEditCarbGoal} hitSlop={8} style={[s.totalRow, { marginTop: 8 }]}>
+        <View style={s.totalLine}>
+          <Text style={[s.carbsTotal, carbsOver && { color: t.over }]}>{carbs}</Text>
+          <Text style={s.kcalUnit}>g carbs</Text>
+        </View>
+        <Text style={s.goalText}>
+          <Text style={[s.remaining, carbsOver && { color: t.over }]}>
+            {carbsOver ? `${carbs - carbGoal} g over` : `${carbGoal - carbs} g left`}
+          </Text>{' '}
+          of {carbGoal} g max <Text style={{ color: t.accent }}>· Edit</Text>
+        </Text>
+      </Pressable>
+      <View style={[s.track, { marginTop: 4 }]}>
+        <View
+          style={[
+            s.fill,
+            { width: `${Math.min(1, carbs / carbGoal) * 100}%`, backgroundColor: carbsOver ? t.over : t.accent },
+          ]}
+        />
+      </View>
+    </View>
+  );
+}
+
+function History({
+  data,
+  onPickDay,
+  onRestore,
+}: {
+  data: Data;
+  onPickDay: (key: string) => void;
+  onRestore: (data: Data) => void;
+}) {
+  const t = useTheme();
+  const s = useMemo(() => styles(t), [t]);
+  const insets = useSafeAreaInsets();
+
+  const rows = useMemo(() => {
+    const totals = new Map<string, { kcal: number; carbs: number; count: number }>();
+    for (const d of Object.keys(data.weights)) totals.set(d, { kcal: 0, carbs: 0, count: 0 });
+    for (const e of data.entries) {
+      const cur = totals.get(e.date) ?? { kcal: 0, carbs: 0, count: 0 };
+      cur.kcal += e.kcal;
+      cur.carbs += e.carbs ?? 0;
+      cur.count += 1;
+      totals.set(e.date, cur);
+    }
+    return [...totals.entries()].map(([date, v]) => ({ date, ...v })).sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [data.entries, data.weights]);
+
+  const [busy, setBusy] = useState(false);
+
+  const doExport = async () => {
+    setBusy(true);
+    try {
+      await exportBackup(data);
+    } catch (e) {
+      Alert.alert('Backup failed', e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doRestore = async () => {
+    let restored: Data | null;
+    try {
+      restored = await pickBackup();
+    } catch (e) {
+      Alert.alert('Restore failed', e instanceof Error ? e.message : String(e));
+      return;
+    }
+    if (!restored) return;
+    const days = new Set(restored.entries.map((e) => e.date)).size;
+    Alert.alert(
+      'Restore backup?',
+      `This replaces everything in the app with the backup (${restored.entries.length} foods over ${days} days). This can't be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Restore', style: 'destructive', onPress: () => onRestore(restored) },
+      ],
+    );
+  };
+
+  const last7 = useMemo(() => {
+    const today = todayKey();
+    const start = addDays(today, -6);
+    const recent = rows.filter((r) => r.count > 0 && r.date >= start && r.date <= today);
+    if (recent.length === 0) return null;
+    return Math.round(recent.reduce((sum, r) => sum + r.kcal, 0) / recent.length);
+  }, [rows]);
+
+  return (
+    <FlatList
+      data={rows}
+      keyExtractor={(r) => r.date}
+      contentContainerStyle={{ padding: 12, paddingBottom: insets.bottom + 24 }}
+      ListHeaderComponent={
+        last7 !== null ? (
+          <View style={[s.card, s.totalRow, { marginHorizontal: 0, marginTop: 0 }]}>
+            <Text style={s.goalText}>7-day average</Text>
+            <View style={s.totalLine}>
+              <Text style={s.bigNumber}>{last7.toLocaleString()}</Text>
+              <Text style={s.kcalUnit}>kcal/day</Text>
+            </View>
+          </View>
+        ) : undefined
+      }
+      ListEmptyComponent={<Text style={s.empty}>No days logged yet.</Text>}
+      ListFooterComponent={
+        <View style={s.backup}>
+          <Text style={s.backupTitle}>Backup</Text>
+          <Text style={s.goalText}>
+            Your data is stored only on this phone. Save a backup file to Google Drive, email or Files now and then.
+          </Text>
+          <View style={s.backupButtons}>
+            <Pressable
+              onPress={doExport}
+              disabled={busy}
+              style={({ pressed }) => [s.backupBtn, pressed && { opacity: 0.6 }]}
+            >
+              <Text style={s.backupBtnText}>{busy ? 'Preparing…' : 'Export backup'}</Text>
+            </Pressable>
+            <Pressable onPress={doRestore} style={({ pressed }) => [s.backupBtn, pressed && { opacity: 0.6 }]}>
+              <Text style={s.backupBtnText}>Restore from file</Text>
+            </Pressable>
+          </View>
+        </View>
+      }
+      renderItem={({ item }) => {
+        const over = item.kcal > data.goal;
+        return (
+          <Pressable
+            onPress={() => onPickDay(item.date)}
+            style={({ pressed }) => [s.histRow, pressed && { opacity: 0.6 }]}
+          >
+            <Text style={s.entryName} numberOfLines={1}>
+              {formatDay(item.date)}
+              <Text style={s.entryMeta}>
+                {'  '}
+                {item.count} item{item.count === 1 ? '' : 's'}
+                {data.weights[item.date] !== undefined && ` · ${data.weights[item.date]} ${data.weightUnit}`}
+              </Text>
+            </Text>
+            <Text style={[s.entryKcal, s.colKcal, over && { color: t.over }]}>{item.kcal.toLocaleString()}</Text>
+            <Text style={[s.entryCarbs, s.colCarbs]}>{item.carbs}g</Text>
+          </Pressable>
+        );
+      }}
+    />
+  );
+}
+
+function WeightRow({
+  weight,
+  previous,
+  unit,
+  isToday,
+  onPress,
+}: {
+  weight: number | undefined;
+  previous: number | null;
+  unit: WeightUnit;
+  isToday: boolean;
+  onPress: () => void;
+}) {
+  const t = useTheme();
+  const s = useMemo(() => styles(t), [t]);
+  const change = weight !== undefined && previous !== null ? Math.round((weight - previous) * 10) / 10 : null;
+  return (
+    <Pressable onPress={onPress} hitSlop={6} style={({ pressed }) => [s.weightRow, pressed && { opacity: 0.6 }]}>
+      {weight === undefined ? (
+        <Text style={[s.goalText, { color: t.accent, fontWeight: '600' }]}>
+          ＋ Add {isToday ? 'today’s' : 'this day’s'} weight
+        </Text>
+      ) : (
+        <Text style={s.goalText}>
+          Weight{' '}
+          <Text style={s.remaining}>
+            {weight} {unit}
+          </Text>
+          {change !== null && change !== 0 && `  ${change > 0 ? '+' : '−'}${Math.abs(change)} since last`}
+          <Text style={{ color: t.accent }}> · Edit</Text>
+        </Text>
+      )}
+    </Pressable>
+  );
+}
+
+function WeightModal({
+  visible,
+  dayLabel,
+  weight,
+  unit,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  dayLabel: string;
+  weight: number | undefined;
+  unit: WeightUnit;
+  onClose: () => void;
+  /** null removes the day's weight. */
+  onSave: (weight: number | null, unit: WeightUnit) => void;
+}) {
+  const t = useTheme();
+  const s = useMemo(() => styles(t), [t]);
+  const [text, setText] = useState('');
+  const [u, setU] = useState<WeightUnit>(unit);
+
+  useEffect(() => {
+    if (visible) {
+      setText(weight === undefined ? '' : String(weight));
+      setU(unit);
+    }
+  }, [visible, weight, unit]);
+
+  const n = Math.round(parseNumber(text) * 10) / 10;
+  const valid = n > 0;
+  const switchUnit = (next: WeightUnit) => {
+    if (next === u) return;
+    if (valid) setText(String(convertWeights({ x: n }, u, next).x));
+    setU(next);
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.centerBackdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={s.dialog}>
+          <Text style={s.dialogTitle}>Weight · {dayLabel}</Text>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+            <TextInput
+              style={[s.dialogInput, { flex: 1 }]}
+              value={text}
+              onChangeText={setText}
+              keyboardType="decimal-pad"
+              placeholder={u}
+              placeholderTextColor={t.muted}
+              autoFocus
+              selectTextOnFocus
+              onSubmitEditing={() => valid && onSave(n, u)}
+            />
+            <View style={s.tabs}>
+              {(['lb', 'kg'] as WeightUnit[]).map((k) => (
+                <Pressable key={k} onPress={() => switchUnit(k)} style={[s.tab, u === k && s.tabActive]}>
+                  <Text style={[s.tabText, u === k && s.tabTextActive]}>{k}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          <View style={s.dialogButtons}>
+            {weight !== undefined && (
+              <Pressable onPress={() => onSave(null, u)} hitSlop={8} style={{ marginRight: 'auto' }}>
+                <Text style={[s.dialogBtn, { color: t.danger }]}>Remove</Text>
+              </Pressable>
+            )}
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Text style={[s.dialogBtn, { color: t.muted }]}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={() => valid && onSave(n, u)} disabled={!valid} hitSlop={8}>
+              <Text style={[s.dialogBtn, { color: t.accent }, !valid && { opacity: 0.4 }]}>Save</Text>
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function GoalModal({
+  visible,
+  title,
+  goal,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  title: string;
+  goal: number;
+  onClose: () => void;
+  onSave: (goal: number) => void;
+}) {
+  const t = useTheme();
+  const s = useMemo(() => styles(t), [t]);
+  const [text, setText] = useState(String(goal));
+
+  useEffect(() => {
+    if (visible) setText(String(goal));
+  }, [visible, goal]);
+
+  const n = Math.round(parseNumber(text));
+  const valid = n > 0;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.centerBackdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={s.dialog}>
+          <Text style={s.dialogTitle}>{title}</Text>
+          <TextInput
+            style={s.dialogInput}
+            value={text}
+            onChangeText={setText}
+            keyboardType="number-pad"
+            autoFocus
+            selectTextOnFocus
+            onSubmitEditing={() => valid && onSave(n)}
+          />
+          <View style={s.dialogButtons}>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Text style={[s.dialogBtn, { color: t.muted }]}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={() => valid && onSave(n)} disabled={!valid} hitSlop={8}>
+              <Text style={[s.dialogBtn, { color: t.accent }, !valid && { opacity: 0.4 }]}>Save</Text>
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const styles = (t: Theme) =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: t.bg },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingTop: 6,
+      paddingBottom: 4,
+      gap: 8,
+      minHeight: 44,
+    },
+    tabs: { flexDirection: 'row', backgroundColor: t.chip, borderRadius: 9, padding: 2 },
+    tab: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 7 },
+    tabActive: { backgroundColor: t.card },
+    tabText: { color: t.muted, fontSize: 13, fontWeight: '600' },
+    tabTextActive: { color: t.text },
+    dateRow: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+    arrow: { width: 32, height: 36, alignItems: 'center', justifyContent: 'center' },
+    arrowText: { fontSize: 28, color: t.text, lineHeight: 32 },
+    dateBtn: { flexShrink: 1, alignItems: 'center', minWidth: 90 },
+    dateText: { fontSize: 18, fontWeight: '700', color: t.text, textAlign: 'center' },
+    backToday: { fontSize: 11, color: t.accent, textAlign: 'center' },
+    card: {
+      backgroundColor: t.card,
+      marginHorizontal: 12,
+      marginTop: 4,
+      marginBottom: 6,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    totalLine: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+    bigNumber: { fontSize: 28, fontWeight: '800', color: t.text, fontVariant: ['tabular-nums'] },
+    kcalUnit: { fontSize: 14, color: t.muted, fontWeight: '600' },
+    track: { height: 6, borderRadius: 3, backgroundColor: t.track, marginTop: 8, overflow: 'hidden' },
+    fill: { height: '100%', borderRadius: 3 },
+    remaining: { fontSize: 14, color: t.text, fontWeight: '700', fontVariant: ['tabular-nums'] },
+    goalText: { fontSize: 12, color: t.muted },
+    empty: { textAlign: 'center', color: t.muted, fontSize: 14, marginTop: 16 },
+    mealHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 10,
+      paddingTop: 6,
+      paddingBottom: 2,
+      gap: 8,
+    },
+    mealTitle: {
+      flex: 1,
+      fontSize: 12,
+      fontWeight: '700',
+      color: t.muted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    mealTotal: { fontSize: 12, fontWeight: '700', color: t.muted, fontVariant: ['tabular-nums'] },
+    colKcal: { width: 44, textAlign: 'right' },
+    colCarbs: { width: 40, textAlign: 'right' },
+    colHeader: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, paddingRight: 40, paddingTop: 2 },
+    colHeaderText: { fontSize: 11, color: t.muted, fontWeight: '600' },
+    carbsTotal: { fontSize: 18, fontWeight: '700', color: t.text, fontVariant: ['tabular-nums'] },
+    entryCarbs: { fontSize: 13, color: t.muted, fontVariant: ['tabular-nums'] },
+    mealAdd: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: t.chip,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    mealAddText: { color: t.accent, fontSize: 14, fontWeight: '700', lineHeight: 16 },
+    entry: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: t.card,
+      paddingLeft: 10,
+      paddingRight: 40,
+      paddingVertical: 5,
+      gap: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.border,
+    },
+    entryFirst: { borderTopLeftRadius: 12, borderTopRightRadius: 12, borderTopWidth: 0 },
+    entryLast: { borderBottomLeftRadius: 12, borderBottomRightRadius: 12 },
+    entryName: { flex: 1, fontSize: 14, color: t.text, fontWeight: '500' },
+    entryMeta: { fontSize: 13, color: t.muted, fontWeight: '400' },
+    entryKcal: { fontSize: 14, color: t.text, fontWeight: '700', fontVariant: ['tabular-nums'] },
+    weightRow: { marginHorizontal: 12, paddingHorizontal: 14, paddingBottom: 2 },
+    backup: { backgroundColor: t.card, borderRadius: 12, padding: 12, marginTop: 16, gap: 6 },
+    backupTitle: { fontSize: 14, fontWeight: '700', color: t.text },
+    backupButtons: { flexDirection: 'row', gap: 8, marginTop: 4 },
+    backupBtn: { flex: 1, backgroundColor: t.chip, borderRadius: 10, paddingVertical: 9, alignItems: 'center' },
+    backupBtnText: { color: t.accent, fontSize: 14, fontWeight: '700' },
+    histRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: t.card,
+      borderRadius: 12,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      marginBottom: 3,
+      gap: 8,
+    },
+    fab: {
+      position: 'absolute',
+      alignSelf: 'center',
+      backgroundColor: t.accent,
+      borderRadius: 999,
+      paddingHorizontal: 20,
+      paddingVertical: 11,
+      shadowColor: '#000',
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 3 },
+      elevation: 4,
+    },
+    fabText: { color: t.accentText, fontSize: 15, fontWeight: '700' },
+    centerBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.4)',
+      justifyContent: 'center',
+      padding: 32,
+    },
+    dialog: { backgroundColor: t.card, borderRadius: 18, padding: 20 },
+    dialogTitle: { fontSize: 18, fontWeight: '700', color: t.text, marginBottom: 12 },
+    dialogInput: {
+      borderWidth: 1,
+      borderColor: t.border,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 20,
+      color: t.text,
+      backgroundColor: t.bg,
+    },
+    dialogButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 28, marginTop: 18 },
+    dialogBtn: { fontSize: 16, fontWeight: '700' },
+  });
